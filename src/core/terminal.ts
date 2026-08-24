@@ -366,8 +366,15 @@ export class Terminal {
       cellAt: (event) => (atlas ? computeCellPoint(atlas, this.#hostBounds, event) : null),
       sendPointer: (kind, button, event) =>
         engine !== undefined && atlas !== undefined
-          ? sendPointerToEngine(engine, atlas, this.#hostBounds, dpr, kind, button, event, (bytes) =>
-              this.#emit("data", bytes),
+          ? sendPointerToEngine(
+              engine,
+              atlas,
+              this.#hostBounds,
+              dpr,
+              kind,
+              button,
+              event,
+              (bytes) => this.#emit("data", bytes),
             )
           : false,
       dragging: this.#dragging,
