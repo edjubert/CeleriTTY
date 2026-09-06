@@ -144,6 +144,11 @@ impl TerminalCore {
         self.term.mode().contains(TermMode::ALT_SCREEN)
     }
 
+    /// Whether pasted text must be wrapped in the bracketed-paste markers.
+    pub fn bracketed_paste(&self) -> bool {
+        self.term.mode().contains(TermMode::BRACKETED_PASTE)
+    }
+
     /// Scroll the display by `delta` lines: positive moves up into history,
     /// negative moves down toward the live screen. Clamped to the available
     /// history by `alacritty_terminal` itself — over-scrolling is a no-op at
@@ -479,6 +484,27 @@ mod tests {
 
         core.feed(b"\x1b[?1l");
         assert!(!core.application_cursor(), "CSI ? 1 l disables DECCKM");
+    }
+
+    #[test]
+    fn bracketed_paste_mode_follows_the_private_mode_sequence() {
+        let mut core = TerminalCore::new(TerminalSize {
+            columns: 20,
+            screen_lines: 5,
+        });
+        assert!(!core.bracketed_paste(), "bracketed paste starts off");
+
+        core.feed(b"\x1b[?2004h");
+        assert!(
+            core.bracketed_paste(),
+            "CSI ? 2004 h enables bracketed paste"
+        );
+
+        core.feed(b"\x1b[?2004l");
+        assert!(
+            !core.bracketed_paste(),
+            "CSI ? 2004 l disables bracketed paste"
+        );
     }
 
     #[test]

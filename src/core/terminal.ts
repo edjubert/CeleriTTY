@@ -35,6 +35,8 @@ import {
   toEncoderButton,
 } from "./pointer";
 import { applySelectionHighlight } from "./selection-highlight";
+import { createNativeTextInput, isCompositionKey } from "./text-input";
+import type { NativeTextInput } from "./text-input";
 import type { CellPoint, TerminalEvent, TerminalEventMap, TerminalOptions } from "./types";
 import type { TerminalTransport } from "../transport/types";
 import { EngineTerminal, encodeKey, engineMemory, loadEngine } from "./wasm";
@@ -57,6 +59,7 @@ export class Terminal {
   #unbindInput: (() => void) | undefined;
   #unbindRendererDiagnostic: (() => void) | undefined;
   #unbindRendererError: (() => void) | undefined;
+  #textInput: NativeTextInput | undefined;
   #frame = 0;
   #dirty = true;
   #grid: GridSize = { columns: 1, lines: 1 };
@@ -155,6 +158,10 @@ export class Terminal {
 
     this.#observer = new ResizeObserver(() => this.#remeasure());
     this.#observer.observe(this.#host);
+    this.#textInput = createNativeTextInput(this.#host, {
+      onText: (text) => this.#sendText(text, false),
+      onPaste: (text) => this.#sendText(text, true),
+    });
     this.#unbindInput = bindInput(this.#host, {
       onKeyDown: (event) => this.#handleKeyDown(event),
       onMouseDown: (event) => this.#handleMouseDown(event),
@@ -180,6 +187,8 @@ export class Terminal {
     this.#unbindRendererError = undefined;
     safely(this.#unbindRendererDiagnostic);
     this.#unbindRendererDiagnostic = undefined;
+    safely(this.#textInput?.dispose.bind(this.#textInput));
+    this.#textInput = undefined;
     safely(this.#renderer?.dispose.bind(this.#renderer));
     this.#renderer = undefined;
     this.#atlas = undefined;
@@ -289,11 +298,16 @@ export class Terminal {
   }
 
   focus(): void {
-    this.#host.focus();
+    if (this.#textInput === undefined) {
+      this.#host.focus({ preventScroll: true });
+      return;
+    }
+    this.#textInput.focus();
   }
 
   blur(): void {
-    this.#host.blur();
+    this.#textInput?.blur();
+    if (this.#host.ownerDocument.activeElement === this.#host) this.#host.blur();
   }
 
   clearScreen(): void {
@@ -419,8 +433,25 @@ export class Terminal {
   }
 
   #handleKeyDown(event: KeyboardEvent): void {
-    if (this.#engine === undefined) return;
-    handleKeyDown(this.#buildState(), event, encodeKey);
+    if (this.#engine === undefined || isCompositionKey(event)) return;
+    if (handleKeyDown(this.#buildState(), event, encodeKey)) {
+      // `preventDefault` normally keeps a physical key from also producing an
+      // input event. The guard covers browser/editor combinations that emit
+      // both anyway, without suppressing later virtual-keyboard tasks.
+      this.#textInput?.suppressInputForCurrentTask();
+    }
+  }
+
+  #sendText(text: string, paste: boolean): void {
+    const engine = this.#engine;
+    if (engine === undefined || text === "") return;
+
+    const normalized = paste ? text.replace(/\r?\n/g, "\r") : text;
+    const payload = paste && engine.bracketedPaste ? `\x1b[200~${normalized}\x1b[201~` : normalized;
+    this.#clearSelection();
+    engine.resetScroll();
+    this.#dirty = true;
+    this.#emit("data", new TextEncoder().encode(payload));
   }
 
   #buildState(): InputHandlerState {
@@ -462,7 +493,7 @@ export class Terminal {
       setDirty: (v) => {
         this.#dirty = v;
       },
-      host: this.#host,
+      host: { focus: () => this.focus() },
       linkAt: (event) => {
         if (engine === undefined || atlas === undefined) return null;
         const cell = computeCellPoint(atlas, this.#hostBounds, event);

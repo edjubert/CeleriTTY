@@ -178,6 +178,21 @@ outside either renderer. A fallback mounted after output has already arrived
 must obtain a snapshot or replay from that session; CeleriTTY does not transfer
 its private WASM grid into another terminal implementation.
 
+### Text input and focus
+
+CeleriTTY owns one native textarea per terminal. Physical keys still use the
+terminal encoder, while the textarea supplies IME composition, dead keys,
+Unicode input, mobile keyboards, and paste without duplicate commits. Paste
+normalizes line endings and follows the application's bracketed-paste mode.
+
+Call `term.focus()` to focus that native surface with `preventScroll`. The host
+remains the only tab stop, and mounting or revealing another terminal never
+moves focus on its own. Do not add a second hidden input around CeleriTTY.
+
+`Meta`-modified keys remain available to the embedding application's shortcut
+system. Product-specific mappings such as Cmd+Arrow to readline commands still
+belong in the host; composition keystrokes never escape to those handlers.
+
 | Method | |
 |---|---|
 | `attach(transport)` / `detach()` | connect and disconnect |
@@ -230,7 +245,6 @@ the file from disk — the one part of this a browser cannot do.
 
 - The package includes only a WebGPU renderer; fallback selection belongs to
   the host and follows the contract above.
-- No IME or composition. Dead keys and CJK input are not handled.
 - No accessibility tree. The grid is a canvas; a screen reader sees nothing.
 - No addon API.
 - One font face. The atlas rasterizes `font.normal`; bold and italic render in

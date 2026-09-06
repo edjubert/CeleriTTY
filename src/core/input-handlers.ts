@@ -107,9 +107,9 @@ export function handleKeyDown(
     meta: boolean,
     applicationCursor: boolean,
   ) => Uint8Array | undefined,
-): void {
+): boolean {
   const engine = state.engine;
-  if (engine === undefined) return;
+  if (engine === undefined) return false;
 
   const bytes = encodeKeyFn(
     event.key,
@@ -119,12 +119,13 @@ export function handleKeyDown(
     event.metaKey,
     engine.applicationCursor,
   );
-  if (bytes === undefined) return;
+  if (bytes === undefined) return false;
   event.preventDefault();
   state.clearSelection();
   engine.resetScroll();
   state.setDirty(true);
   state.emit("data", bytes);
+  return true;
 }
 
 export function handleMouseDown(

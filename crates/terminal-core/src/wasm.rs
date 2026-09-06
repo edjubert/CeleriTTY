@@ -113,6 +113,11 @@ impl Terminal {
         self.core.alt_screen()
     }
 
+    #[wasm_bindgen(getter, js_name = bracketedPaste)]
+    pub fn bracketed_paste(&self) -> bool {
+        self.core.bracketed_paste()
+    }
+
     /// Rewrite the packed grid buffer. Call once per frame, before reading the
     /// snapshot pointer.
     #[wasm_bindgen(js_name = refreshSnapshot)]
