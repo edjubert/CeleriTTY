@@ -98,10 +98,11 @@ function wireFeedButtons(feed: (bytes: Uint8Array) => void): void {
     feed(new TextEncoder().encode("hello from terminal-core\r\n"));
   requireElement<HTMLButtonElement>("feed-colors").onclick = () => {
     let sequence = "";
-    for (let color = 0; color < 16; color += 1) {
+    for (let color = 0; color < 256; color += 1) {
       sequence += `\x1b[38;5;${color}m██`;
+      if (color % 16 === 15) sequence += "\x1b[0m\r\n";
     }
-    feed(new TextEncoder().encode(`${sequence}\x1b[0m\r\n`));
+    feed(new TextEncoder().encode(sequence));
   };
   requireElement<HTMLButtonElement>("feed-truecolor").onclick = () =>
     feed(new TextEncoder().encode("\x1b[1;38;2;18;52;86mtrue color bold\x1b[0m\r\n"));
