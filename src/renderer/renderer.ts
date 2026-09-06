@@ -24,6 +24,7 @@ export class TerminalRenderer implements Renderer {
   #instanceCapacity = 0;
   #texture: GPUTexture | undefined;
   #sampler: GPUSampler;
+  #disposed = false;
 
   private constructor(
     device: GPUDevice,
@@ -69,54 +70,61 @@ export class TerminalRenderer implements Renderer {
       throw new Error("No WebGPU adapter available — the GPU driver may be unsupported.");
     }
     const device = await adapter.requestDevice();
+    let context: GPUCanvasContext | undefined;
+    try {
+      context = canvas.getContext("webgpu") ?? undefined;
+      if (context === undefined) {
+        throw new Error("Could not acquire a WebGPU context from the canvas.");
+      }
 
-    const context = canvas.getContext("webgpu");
-    if (context === null) {
-      throw new Error("Could not acquire a WebGPU context from the canvas.");
+      const format = navigator.gpu.getPreferredCanvasFormat();
+      context.configure({
+        device,
+        format,
+        // Translucent themes paint a transparent terminal background, mirroring
+        // what the existing shell terminal does with allowTransparency.
+        alphaMode: "premultiplied",
+      });
+
+      const module = device.createShaderModule({ code: TERMINAL_SHADER });
+      const pipeline = device.createRenderPipeline({
+        layout: "auto",
+        vertex: {
+          module,
+          entryPoint: "vertexMain",
+          buffers: [
+            {
+              arrayStride: FLOATS_PER_INSTANCE * BYTES_PER_FLOAT,
+              stepMode: "instance",
+              attributes: [
+                { shaderLocation: 0, offset: 0, format: "float32x2" },
+                { shaderLocation: 1, offset: 2 * BYTES_PER_FLOAT, format: "float32x4" },
+                { shaderLocation: 2, offset: 6 * BYTES_PER_FLOAT, format: "float32x4" },
+                { shaderLocation: 3, offset: 10 * BYTES_PER_FLOAT, format: "float32x4" },
+                { shaderLocation: 4, offset: 14 * BYTES_PER_FLOAT, format: "float32" },
+              ],
+            },
+          ],
+        },
+        fragment: {
+          module,
+          entryPoint: "fragmentMain",
+          targets: [{ format }],
+        },
+        primitive: { topology: "triangle-list" },
+      });
+
+      return new TerminalRenderer(device, context, pipeline, atlas);
+    } catch (error) {
+      safely(context?.unconfigure.bind(context));
+      safely(device.destroy.bind(device));
+      throw error;
     }
-
-    const format = navigator.gpu.getPreferredCanvasFormat();
-    context.configure({
-      device,
-      format,
-      // Translucent themes paint a transparent terminal background, mirroring
-      // what the existing shell terminal does with allowTransparency.
-      alphaMode: "premultiplied",
-    });
-
-    const module = device.createShaderModule({ code: TERMINAL_SHADER });
-    const pipeline = device.createRenderPipeline({
-      layout: "auto",
-      vertex: {
-        module,
-        entryPoint: "vertexMain",
-        buffers: [
-          {
-            arrayStride: FLOATS_PER_INSTANCE * BYTES_PER_FLOAT,
-            stepMode: "instance",
-            attributes: [
-              { shaderLocation: 0, offset: 0, format: "float32x2" },
-              { shaderLocation: 1, offset: 2 * BYTES_PER_FLOAT, format: "float32x4" },
-              { shaderLocation: 2, offset: 6 * BYTES_PER_FLOAT, format: "float32x4" },
-              { shaderLocation: 3, offset: 10 * BYTES_PER_FLOAT, format: "float32x4" },
-              { shaderLocation: 4, offset: 14 * BYTES_PER_FLOAT, format: "float32" },
-            ],
-          },
-        ],
-      },
-      fragment: {
-        module,
-        entryPoint: "fragmentMain",
-        targets: [{ format }],
-      },
-      primitive: { topology: "triangle-list" },
-    });
-
-    return new TerminalRenderer(device, context, pipeline, atlas);
   }
 
   /** Replace the theme. Rewrites one uniform buffer; never touches the atlas. */
   setPalette(overrides: Map<number, string>): void {
+    this.#assertLive("setPalette");
     this.#device.queue.writeBuffer(
       this.#paletteBuffer,
       0,
@@ -131,6 +139,7 @@ export class TerminalRenderer implements Renderer {
    * keeping it would draw old glyph shapes at the new cell metrics.
    */
   setAtlas(atlas: AtlasTexture): void {
+    this.#assertLive("setAtlas");
     this.#atlas = atlas;
     this.#texture?.destroy();
     this.#texture = undefined;
@@ -138,6 +147,7 @@ export class TerminalRenderer implements Renderer {
 
   /** Draw one frame. */
   render(grid: RendererGrid): void {
+    this.#assertLive("render");
     // Order matters, and both steps have to precede the upload:
     //   1. rasterize every code point, so the atlas reaches its final height
     //      before any texture coordinate is normalized against it;
@@ -218,14 +228,17 @@ export class TerminalRenderer implements Renderer {
    * leaking one per terminal that is torn down.
    */
   dispose(): void {
-    this.#texture?.destroy();
+    if (this.#disposed) return;
+    this.#disposed = true;
+    safely(this.#texture?.destroy.bind(this.#texture));
     this.#texture = undefined;
-    this.#instanceBuffer?.destroy();
+    safely(this.#instanceBuffer?.destroy.bind(this.#instanceBuffer));
     this.#instanceBuffer = undefined;
     this.#instanceCapacity = 0;
-    this.#uniformBuffer.destroy();
-    this.#paletteBuffer.destroy();
-    this.#device.destroy();
+    safely(this.#uniformBuffer.destroy.bind(this.#uniformBuffer));
+    safely(this.#paletteBuffer.destroy.bind(this.#paletteBuffer));
+    safely(this.#context.unconfigure.bind(this.#context));
+    safely(this.#device.destroy.bind(this.#device));
   }
 
   #uploadAtlasIfDirty(): void {
@@ -261,6 +274,22 @@ export class TerminalRenderer implements Renderer {
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.#instanceCapacity = byteLength;
+  }
+
+  #assertLive(method: string): void {
+    if (this.#disposed) {
+      throw new Error(`TerminalRenderer.${method}() was called after dispose().`);
+    }
+  }
+}
+
+/** Continue releasing the rest of a device even if one resource hook throws. */
+function safely(cleanup: (() => void) | undefined): void {
+  if (cleanup === undefined) return;
+  try {
+    cleanup();
+  } catch {
+    // A failed cleanup has no recovery path; the device is destroyed last.
   }
 }
 
