@@ -52,6 +52,12 @@ impl Terminal {
         self.core.feed(bytes);
     }
 
+    /// Drain protocol replies (for example cursor-position reports) to the PTY.
+    #[wasm_bindgen(js_name = takeOutput)]
+    pub fn take_output(&mut self) -> Vec<u8> {
+        self.core.take_output()
+    }
+
     pub fn resize(&mut self, columns: usize, screen_lines: usize) {
         self.core.resize(TerminalSize {
             columns,

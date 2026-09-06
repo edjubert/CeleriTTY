@@ -228,8 +228,12 @@ export class Terminal {
 
   /** Feed PTY output in. */
   feed(bytes: Uint8Array): void {
-    this.#requireEngine("feed").feed(bytes);
+    const engine = this.#requireEngine("feed");
+    engine.feed(bytes);
     this.#dirty = true;
+    // Drain before emitting: a data listener may synchronously feed more output.
+    const replies = engine.takeOutput();
+    if (replies.length > 0) this.#emit("data", replies);
   }
 
   /**
@@ -300,7 +304,7 @@ export class Terminal {
     for (const off of subscriptions) safely(off);
   }
 
-  /** Inject text as if the program had printed it. Does not reach the PTY. */
+  /** Inject program output, not keyboard input. Protocol queries may emit replies. */
   write(text: string): void {
     this.feed(new TextEncoder().encode(text));
   }

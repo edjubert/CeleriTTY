@@ -5,6 +5,7 @@
 //! application expects. Rendering itself lives outside this crate.
 
 pub mod input;
+mod pty_output;
 pub mod snapshot;
 pub mod terminal;
 pub mod wasm;

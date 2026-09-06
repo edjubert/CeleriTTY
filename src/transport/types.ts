@@ -9,7 +9,7 @@
  * else's package.
  */
 export interface TerminalTransport {
-  /** Send bytes to the process. Called for every keystroke and mouse report. */
+  /** Send input and parser-generated protocol replies to the process. */
   write(bytes: Uint8Array): void;
 
   /** Tell the process the grid changed size. */
