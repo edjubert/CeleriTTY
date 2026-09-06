@@ -55,6 +55,7 @@ export class Terminal {
   #atlas: GlyphAtlas | undefined;
   #observer: ResizeObserver | undefined;
   #unbindInput: (() => void) | undefined;
+  #unbindRendererError: (() => void) | undefined;
   #frame = 0;
   #dirty = true;
   #grid: GridSize = { columns: 1, lines: 1 };
@@ -125,6 +126,16 @@ export class Terminal {
       safely(renderer?.dispose.bind(renderer));
     }
 
+    let startupRendererError: Error | undefined;
+    this.#unbindRendererError = this.#renderer.onError?.((error) => {
+      if (this.#engine === undefined) {
+        startupRendererError = error;
+        return;
+      }
+      this.#handleRendererError(error);
+    });
+    if (startupRendererError !== undefined) throw startupRendererError;
+
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
     this.#engine = engine;
@@ -154,6 +165,8 @@ export class Terminal {
     this.#observer = undefined;
     safely(this.#unbindInput);
     this.#unbindInput = undefined;
+    safely(this.#unbindRendererError);
+    this.#unbindRendererError = undefined;
     safely(this.#renderer?.dispose.bind(this.#renderer));
     this.#renderer = undefined;
     this.#atlas = undefined;
@@ -338,6 +351,17 @@ export class Terminal {
       }
     }
     if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
+  }
+
+  #handleRendererError(error: Error): void {
+    if (this.#disposed) return;
+    try {
+      this.#emit("error", error);
+    } finally {
+      // A lost device cannot render a future frame. Clear the canvas and the
+      // pending animation frame so the host can activate a compatibility path.
+      this.dispose();
+    }
   }
 
   #remeasure(): void {

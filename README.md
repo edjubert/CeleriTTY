@@ -15,7 +15,9 @@ transport.
 
 ## Requirements
 
-- A browser with WebGPU. There is no Canvas 2D or DOM fallback.
+- The bundled renderer needs WebGPU. There is no bundled Canvas 2D or DOM
+  renderer; hosts can provide their own compatibility terminal as described
+  below.
 - A backend that speaks [`PROTOCOL.md`](PROTOCOL.md), or your own transport.
 
 ## Install
@@ -130,6 +132,44 @@ await term.ready;
 term.attach(myTransport);
 ```
 
+### WebGPU failure and fallback
+
+`Terminal.ready` rejects when WebAssembly or WebGPU initialization fails. This
+includes a missing `navigator.gpu`, no adapter, device creation failure, and
+canvas or pipeline setup failure. After initialization, asynchronous device
+loss and uncaptured WebGPU errors are reported through the terminal's `error`
+event and make that terminal instance unusable.
+
+Register the runtime listener before awaiting `ready`, and use one guarded path
+for both kinds of failure:
+
+```ts
+const term = new Terminal(host, options);
+let usingFallback = false;
+
+function useFallback(error: unknown) {
+  if (usingFallback) return;
+  usingFallback = true;
+  term.dispose();
+  mountCompatibilityTerminal(host, error);
+}
+
+term.on("error", useFallback);
+
+try {
+  await term.ready;
+  term.attach(transport);
+} catch (error) {
+  useFallback(error);
+}
+```
+
+The host owns fallback selection and loading, so a heavyweight compatibility
+renderer does not enter bundles that only support WebGPU. Keep the PTY/session
+outside either renderer. A fallback mounted after output has already arrived
+must obtain a snapshot or replay from that session; CeleriTTY does not transfer
+its private WASM grid into another terminal implementation.
+
 | Method | |
 |---|---|
 | `attach(transport)` / `detach()` | connect and disconnect |
@@ -180,7 +220,8 @@ the file from disk — the one part of this a browser cannot do.
 
 ## Limits
 
-- WebGPU only; no fallback renderer.
+- The package includes only a WebGPU renderer; fallback selection belongs to
+  the host and follows the contract above.
 - No IME or composition. Dead keys and CJK input are not handled.
 - No accessibility tree. The grid is a canvas; a screen reader sees nothing.
 - No addon API.
