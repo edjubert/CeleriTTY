@@ -243,6 +243,14 @@ interface TerminalTransport {
 with their own protocol — session reattachment, exit codes, scrollback replay
 — implement the interface directly and do not import it.
 
+`attach()` replaces the current transport without replacing the terminal
+engine. The grid, scrollback, alternate-screen state, selection, and live
+options therefore survive `detach()` / `attach()` reconnects. A transport may
+synchronously replay buffered output from `onData()` or report closure from
+`onClose()` while it is being attached; CeleriTTY installs and tears down the
+whole attachment atomically. Gap recovery and server-side session replay remain
+the transport's responsibility.
+
 ## Configuration
 
 `options` is fully resolved. The component applies it and resolves nothing:

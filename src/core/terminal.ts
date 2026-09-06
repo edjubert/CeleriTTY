@@ -244,23 +244,39 @@ export class Terminal {
     this.detach();
 
     this.#transport = transport;
-    this.#transportOff = [
-      transport.onData((bytes) => this.feed(bytes)),
-      transport.onClose((reason) => {
-        this.detach();
-        if (reason !== undefined) {
-          this.#emit("error", new Error(reason));
-        }
-      }),
-      this.on("data", (bytes) => transport.write(bytes)),
-      this.on("resize", (grid) => transport.resize(grid.columns, grid.lines)),
-    ];
+    const subscriptions: Array<() => void> = [];
+    this.#transportOff = subscriptions;
+    const subscribe = (unsubscribe: () => void): void => {
+      if (this.#transportOff === subscriptions) subscriptions.push(unsubscribe);
+      else unsubscribe();
+    };
 
-    // The grid is already measured by the time a host attaches, and the
-    // process was spawned at whatever size the host guessed. Send the real
-    // one immediately, or a full-screen program draws for the wrong grid
-    // until the next resize — which may never come.
-    transport.resize(this.#grid.columns, this.#grid.lines);
+    try {
+      // Install outbound writes before inbound callbacks. A transport is
+      // allowed to synchronously replay output or report closure while a
+      // listener is registered, and parser replies must already have a route.
+      subscribe(this.on("data", (bytes) => transport.write(bytes)));
+      subscribe(this.on("resize", (grid) => transport.resize(grid.columns, grid.lines)));
+      subscribe(transport.onData((bytes) => this.feed(bytes)));
+      subscribe(
+        transport.onClose((reason) => {
+          if (this.#transportOff !== subscriptions) return;
+          this.detach();
+          if (reason !== undefined) this.#emit("error", new Error(reason));
+        }),
+      );
+
+      if (this.#transportOff === subscriptions) {
+        // The grid is already measured by the time a host attaches, and the
+        // process was spawned at whatever size the host guessed. Send the real
+        // one immediately, or a full-screen program draws for the wrong grid
+        // until the next resize — which may never come.
+        transport.resize(this.#grid.columns, this.#grid.lines);
+      }
+    } catch (error) {
+      if (this.#transportOff === subscriptions) this.detach();
+      throw error;
+    }
   }
 
   /** The currently attached transport, if any. */
