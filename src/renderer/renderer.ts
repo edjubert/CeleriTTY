@@ -99,8 +99,9 @@ export class TerminalRenderer implements Renderer {
       context.configure({
         device,
         format,
-        // Translucent themes paint a transparent terminal background, mirroring
-        // what the existing shell terminal does with allowTransparency.
+        // Premultiplied alpha leaves the sub-cell canvas remainder transparent.
+        // Palette entries are currently opaque #rrggbb, so rendered cell
+        // backgrounds themselves do not expose the host background.
         alphaMode: "premultiplied",
       });
 

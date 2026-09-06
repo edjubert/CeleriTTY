@@ -197,6 +197,25 @@ moves focus on its own. Do not add a second hidden input around CeleriTTY.
 system. Product-specific mappings such as Cmd+Arrow to readline commands still
 belong in the host; composition keystrokes never escape to those handlers.
 
+### Embedding and resizing
+
+Give the host a definite, non-zero content-box size. CeleriTTY sizes its canvas
+and PTY grid from that content box, so padding and borders can safely live on
+the host itself without stretching the canvas or overstating rows and columns.
+Positioned and resizable containers are supported.
+
+When a host becomes zero-sized (for example, a `display: none` tab), CeleriTTY
+keeps its last grid instead of resizing a full-screen application to `1x1`.
+`ResizeObserver` remeasures it when it becomes visible. The same `Terminal`
+instance should stay mounted across split-pane and tab changes when its screen
+and scrollback state must survive.
+
+The WebGPU canvas uses premultiplied alpha, but current palette parsing accepts
+only opaque `#rrggbb` values and every rendered cell background is opaque. The
+sub-cell remainder at the right and bottom edges stays transparent. Put a host
+background behind the canvas for those edges; translucent terminal themes are
+not currently supported.
+
 | Method | |
 |---|---|
 | `attach(transport)` / `detach()` | connect and disconnect |
@@ -253,6 +272,10 @@ the file from disk — the one part of this a browser cannot do.
 - No addon API.
 - One font face. The atlas rasterizes `font.normal`; bold and italic render in
   the same face.
+- Palette values are opaque `#rrggbb`; translucent cell backgrounds are not
+  supported.
+- Wide and combining glyph layout still needs dedicated renderer coverage; the
+  atlas clips every rasterized glyph to one cell.
 - `cursor.style` and `cursor.blink` are carried in the options but not drawn.
 - No `bell` or `title` events; the engine does not surface them.
 
