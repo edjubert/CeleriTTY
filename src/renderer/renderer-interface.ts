@@ -26,11 +26,14 @@ export interface AtlasTexture extends GlyphSource {
 
 export interface Renderer {
   /**
-   * Subscribe to an asynchronous renderer failure, such as WebGPU device
+   * Subscribe to a fatal asynchronous renderer failure, such as WebGPU device
    * loss. Optional for third-party renderers that can only fail from
    * synchronous method calls.
    */
   onError?(listener: (error: Error) => void): () => void;
+
+  /** Non-fatal failed GPU calls. These do not imply that the device was lost. */
+  onDiagnostic?(listener: (error: Error) => void): () => void;
 
   /**
    * Replace the theme. Palette slot indices follow alacritty's

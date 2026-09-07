@@ -55,6 +55,7 @@ export class Terminal {
   #atlas: GlyphAtlas | undefined;
   #observer: ResizeObserver | undefined;
   #unbindInput: (() => void) | undefined;
+  #unbindRendererDiagnostic: (() => void) | undefined;
   #unbindRendererError: (() => void) | undefined;
   #frame = 0;
   #dirty = true;
@@ -126,19 +127,28 @@ export class Terminal {
       safely(renderer?.dispose.bind(renderer));
     }
 
+    let starting = true;
     let startupRendererError: Error | undefined;
     this.#unbindRendererError = this.#renderer.onError?.((error) => {
-      if (this.#engine === undefined) {
+      if (this.#disposed) return;
+      if (starting) {
         startupRendererError = error;
         return;
       }
       this.#handleRendererError(error);
     });
-    if (startupRendererError !== undefined) throw startupRendererError;
+    if (startupRendererError !== undefined) {
+      this.dispose();
+      throw startupRendererError;
+    }
+    this.#unbindRendererDiagnostic = this.#renderer.onDiagnostic?.((error) => {
+      if (!this.#disposed) this.#emit("error", error);
+    });
 
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
     this.#engine = engine;
+    starting = false;
     this.#grid = { columns: 80, lines: 24 };
     this.#dirty = true;
 
@@ -167,6 +177,8 @@ export class Terminal {
     this.#unbindInput = undefined;
     safely(this.#unbindRendererError);
     this.#unbindRendererError = undefined;
+    safely(this.#unbindRendererDiagnostic);
+    this.#unbindRendererDiagnostic = undefined;
     safely(this.#renderer?.dispose.bind(this.#renderer));
     this.#renderer = undefined;
     this.#atlas = undefined;

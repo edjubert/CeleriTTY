@@ -28,8 +28,11 @@ export class TerminalRenderer implements Renderer {
   #disposed = false;
   #failure: Error | undefined;
   readonly #errorListeners = new Set<(error: Error) => void>();
+  readonly #diagnosticListeners = new Set<(error: Error) => void>();
   readonly #onUncapturedError = (event: GPUUncapturedErrorEvent): void => {
-    this.#reportError(new Error(`Uncaptured WebGPU error: ${event.error.message}`));
+    if (this.#disposed) return;
+    const error = new Error(`Uncaptured WebGPU error: ${event.error.message}`);
+    for (const listener of Array.from(this.#diagnosticListeners)) listener(error);
   };
 
   private constructor(
@@ -149,6 +152,14 @@ export class TerminalRenderer implements Renderer {
     };
   }
 
+  onDiagnostic(listener: (error: Error) => void): () => void {
+    if (this.#disposed) return () => {};
+    this.#diagnosticListeners.add(listener);
+    return () => {
+      this.#diagnosticListeners.delete(listener);
+    };
+  }
+
   /** Replace the theme. Rewrites one uniform buffer; never touches the atlas. */
   setPalette(overrides: Map<number, string>): void {
     this.#assertLive("setPalette");
@@ -259,6 +270,7 @@ export class TerminalRenderer implements Renderer {
     this.#disposed = true;
     safely(() => this.#device.removeEventListener("uncapturederror", this.#onUncapturedError));
     this.#errorListeners.clear();
+    this.#diagnosticListeners.clear();
     safely(this.#texture?.destroy.bind(this.#texture));
     this.#texture = undefined;
     safely(this.#instanceBuffer?.destroy.bind(this.#instanceBuffer));

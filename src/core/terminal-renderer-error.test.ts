@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Renderer } from "../renderer/renderer-interface";
 
 const wasm = vi.hoisted(() => ({
+  free: vi.fn(),
   memory: new ArrayBuffer(80 * 24 * 4 * Uint32Array.BYTES_PER_ELEMENT),
 }));
 
@@ -26,7 +27,7 @@ vi.mock("./wasm", () => ({
     }
     resize(): void {}
     resetScroll(): void {}
-    free(): void {}
+    free = wasm.free;
   },
   encodeKey: vi.fn(),
   engineMemory: () => wasm.memory,
@@ -64,6 +65,7 @@ const OPTIONS = {
 
 describe("Terminal renderer failures", () => {
   beforeEach(() => {
+    wasm.free.mockClear();
     vi.stubGlobal(
       "OffscreenCanvas",
       class {
@@ -103,6 +105,64 @@ describe("Terminal renderer failures", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("rejects startup and cleans up when the renderer reports a cached fatal error", async () => {
+    const error = new Error("early loss");
+    const off = vi.fn();
+    const renderer: Renderer = {
+      setPalette: vi.fn(),
+      setAtlas: vi.fn(),
+      render: vi.fn(),
+      dispose: vi.fn(),
+      onError(listener) {
+        listener(error);
+        return off;
+      },
+    };
+    const host = document.createElement("div");
+    const terminal = new Terminal(host, OPTIONS, async () => renderer);
+    await expect(terminal.ready).rejects.toBe(error);
+    expect(off).toHaveBeenCalledOnce();
+    expect(renderer.dispose).toHaveBeenCalledOnce();
+    expect(host.querySelector("canvas")).toBeNull();
+    expect(wasm.free).not.toHaveBeenCalled();
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
+  });
+
+  it("keeps the engine for diagnostics, then handles fatal loss, ignoring callbacks after disposal", async () => {
+    let diagnostic!: (error: Error) => void;
+    let fatal!: (error: Error) => void;
+    const renderer: Renderer = {
+      setPalette: vi.fn(),
+      setAtlas: vi.fn(),
+      render: vi.fn(),
+      dispose: vi.fn(),
+      onError(listener) {
+        fatal = listener;
+        return vi.fn();
+      },
+      onDiagnostic(listener) {
+        diagnostic = listener;
+        return vi.fn();
+      },
+    };
+    const terminal = new Terminal(document.createElement("div"), OPTIONS, async () => renderer);
+    await terminal.ready;
+    const errors = vi.fn();
+    terminal.on("error", errors);
+    diagnostic(new Error("validation"));
+    diagnostic(new Error("out of memory"));
+    expect(errors).toHaveBeenCalledTimes(2);
+    expect(wasm.free).not.toHaveBeenCalled();
+    expect(renderer.dispose).not.toHaveBeenCalled();
+    fatal(new Error("lost"));
+    expect(errors).toHaveBeenCalledTimes(3);
+    expect(wasm.free).toHaveBeenCalledOnce();
+    expect(renderer.dispose).toHaveBeenCalledOnce();
+    fatal(new Error("late loss"));
+    diagnostic(new Error("late diagnostic"));
+    expect(errors).toHaveBeenCalledTimes(3);
   });
 
   it("surfaces asynchronous renderer failure and releases the unusable terminal", async () => {
