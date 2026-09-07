@@ -284,8 +284,6 @@ export class TerminalRenderer implements Renderer {
   }
 }
 
-/** Continue releasing the rest of a device even if one resource hook throws. */
-
 /**
  * The WebGPU implementation of `RendererFactory`.
  *
