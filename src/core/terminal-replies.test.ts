@@ -6,6 +6,7 @@ import { FakeRenderer } from "../renderer/fake-renderer";
 import type { TerminalOptions } from "./types";
 import { loadEngine } from "./wasm";
 import { Terminal } from "./terminal";
+import type { TerminalOutputOptions } from "../transport/types";
 
 // Exercise the real parser and public Terminal API without requiring a GPU.
 vi.mock("../renderer/atlas", () => ({
@@ -44,13 +45,15 @@ afterEach(() => {
 });
 
 describe("terminal protocol replies", () => {
-  it("routes queries injected through write without echoing ordinary text", () => {
+  it("keeps local write queries silent and discards their replies", () => {
     const output: string[] = [];
     terminal.on("data", (bytes) => output.push(decode(bytes)));
     terminal.write("text");
     expect(output).toEqual([]);
     terminal.write("\x1b[6n");
-    expect(output).toEqual(["\x1b[1;5R"]);
+    expect(output).toEqual([]);
+    terminal.feed(encode("\x1b[5n"));
+    expect(output).toEqual(["\x1b[0n"]);
   });
 
   it("emits a completed cursor report once and leaves ordinary text silent", () => {
@@ -78,6 +81,39 @@ describe("terminal protocol replies", () => {
     });
     receive(encode("\x1b[3;7H\x1b[6n\x1b[5n"));
     expect(write).toHaveBeenCalledExactlyOnceWith(encode("\x1b[3;7R\x1b[0n"));
+  });
+
+  it("discards replayed queries across transport chunks without suppressing later live replies", () => {
+    let receive!: (bytes: Uint8Array, options?: TerminalOutputOptions) => void;
+    const write = vi.fn();
+    terminal.attach({
+      write,
+      resize: vi.fn(),
+      onData: (cb) => {
+        receive = cb;
+        return () => {};
+      },
+      onClose: () => () => {},
+    });
+    receive(encode("history\x1b[6"), { replyToQueries: false });
+    receive(encode("n\x1b[5n"), { replyToQueries: false });
+    expect(write).not.toHaveBeenCalled();
+    terminal.write("banner\x1b[6n");
+    expect(write).not.toHaveBeenCalled();
+    receive(encode("live"));
+    expect(write).not.toHaveBeenCalled();
+    receive(encode("\x1b[5n"));
+    expect(write).toHaveBeenCalledExactlyOnceWith(encode("\x1b[0n"));
+  });
+
+  it("supports direct replay without leaking queued replies into the next feed", () => {
+    const output: string[] = [];
+    terminal.on("data", (bytes) => output.push(decode(bytes)));
+    terminal.feed(encode("\x1b[6n\x1b[5n"), { replyToQueries: false });
+    terminal.feed(encode("ordinary output"));
+    expect(output).toEqual([]);
+    terminal.feed(encode("\x1b[5n"));
+    expect(output).toEqual(["\x1b[0n"]);
   });
 
   it("drains before callbacks so reentrant feeds cannot duplicate replies", () => {

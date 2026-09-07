@@ -1,3 +1,9 @@
+/** How an output chunk should interact with the live process. */
+export interface TerminalOutputOptions {
+  /** Defaults to true for live output. Set false for replay or local output. */
+  replyToQueries?: boolean;
+}
+
 /**
  * How a terminal talks to whatever is running the shell.
  *
@@ -19,8 +25,10 @@ export interface TerminalTransport {
    * Subscribe to process output. Returns an unsubscribe function; the
    * terminal calls it on `detach` and on `dispose`, so an implementation that
    * ignores the return value will leak listeners across reconnects.
+   * Mark replayed history with { replyToQueries: false }; stale queries must
+   * not inject fresh responses into the live process.
    */
-  onData(cb: (bytes: Uint8Array) => void): () => void;
+  onData(cb: (bytes: Uint8Array, options?: TerminalOutputOptions) => void): () => void;
 
   /**
    * Subscribe to the connection ending, for any reason. `reason` is a

@@ -38,7 +38,7 @@ import { applySelectionHighlight } from "./selection-highlight";
 import { createNativeTextInput, isCompositionKey } from "./text-input";
 import type { NativeTextInput } from "./text-input";
 import type { CellPoint, TerminalEvent, TerminalEventMap, TerminalOptions } from "./types";
-import type { TerminalTransport } from "../transport/types";
+import type { TerminalTransport, TerminalOutputOptions } from "../transport/types";
 import { EngineTerminal, encodeKey, engineMemory, loadEngine } from "./wasm";
 
 type AnyListener = (payload: never) => void;
@@ -226,14 +226,14 @@ export class Terminal {
 
   // -------------------------------------------------------------- public API
 
-  /** Feed PTY output in. */
-  feed(bytes: Uint8Array): void {
+  /** Feed live PTY output. Disable replies explicitly for replayed history. */
+  feed(bytes: Uint8Array, options: TerminalOutputOptions = {}): void {
     const engine = this.#requireEngine("feed");
     engine.feed(bytes);
     this.#dirty = true;
     // Drain before emitting: a data listener may synchronously feed more output.
     const replies = engine.takeOutput();
-    if (replies.length > 0) this.#emit("data", replies);
+    if (options.replyToQueries !== false && replies.length > 0) this.#emit("data", replies);
   }
 
   /**
@@ -268,7 +268,7 @@ export class Terminal {
       // listener is registered, and parser replies must already have a route.
       subscribe(this.on("data", (bytes) => transport.write(bytes)));
       subscribe(this.on("resize", (grid) => transport.resize(grid.columns, grid.lines)));
-      subscribe(transport.onData((bytes) => this.feed(bytes)));
+      subscribe(transport.onData((bytes, options) => this.feed(bytes, options)));
       subscribe(
         transport.onClose((reason) => {
           if (this.#transportOff !== subscriptions) return;
@@ -304,9 +304,9 @@ export class Terminal {
     for (const off of subscriptions) safely(off);
   }
 
-  /** Inject program output, not keyboard input. Protocol queries may emit replies. */
+  /** Inject local text without sending parser replies to the process. */
   write(text: string): void {
-    this.feed(new TextEncoder().encode(text));
+    this.feed(new TextEncoder().encode(text), { replyToQueries: false });
   }
 
   setOptions(patch: Partial<TerminalOptions>): void {

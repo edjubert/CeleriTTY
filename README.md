@@ -219,8 +219,8 @@ not currently supported.
 | Method | |
 |---|---|
 | `attach(transport)` / `detach()` | connect and disconnect |
-| `feed(bytes)` | process output in |
-| `write(text)` | inject text locally; does not reach the process |
+| `feed(bytes, options?)` | live process output in; parser replies go to `data` / the attached transport. Set `{ replyToQueries: false }` for replayed history |
+| `write(text)` | inject text locally; parser replies are discarded, so it does not reach the process |
 | `setOptions(patch)` | applies live; a colour change does not rebuild the glyph atlas |
 | `focus()` / `blur()` / `clearScreen()` | |
 | `getSelection()` / `copySelection()` | |
@@ -321,3 +321,14 @@ celeritty name: use it to refer to this project, not to brand yours.
 [`alacritty_terminal`](https://github.com/alacritty/alacritty), Copyright The
 Alacritty Project, also Apache-2.0. It keeps its own licence file alongside
 the vendored source.
+
+### Live output versus replay
+
+`feed(bytes)` answers terminal protocol queries by default. Replayed history
+must not generate new input for the live shell. A host feeding history directly
+must use `terminal.feed(history, { replyToQueries: false })`. A custom transport
+must pass the same option as the second argument to its `onData` callback for
+every replay chunk; omit it again for live output. The terminal cannot infer
+whether a byte stream is live or historical. Suppressed replies are drained and
+discarded immediately, never deferred until the next live chunk. `write(text)`
+is always local-only and uses this suppression internally.

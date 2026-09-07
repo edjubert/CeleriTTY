@@ -34,5 +34,5 @@ export type { DetectedLink } from "./core/link-detection";
 // Type only: a value export from the root would pull the reference transport
 // implementation into every consumer's bundle, including hosts that supply
 // their own.
-export type { TerminalTransport } from "./transport/types";
+export type { TerminalTransport, TerminalOutputOptions } from "./transport/types";
 export type { GridSize } from "./renderer/grid-metrics";
