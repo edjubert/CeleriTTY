@@ -183,7 +183,8 @@ impl TerminalCore {
         });
     }
 
-    /// Text between two grid points, inclusive. `start` must not be after
+    /// Text between two viewport points, inclusive. Rows are zero-based, just
+    /// like row_text; viewport-to-grid conversion belongs in the engine. `start` must not be after
     /// `end` (compare line first, then column) — alacritty_terminal's
     /// `bounds_to_string` iterates `start.line..=end.line` and silently
     /// returns an empty string if that range is empty, so a caller that
@@ -198,8 +199,9 @@ impl TerminalCore {
         end_line: i32,
         end_col: usize,
     ) -> String {
-        let start = Point::new(Line(start_line), Column(start_col));
-        let end = Point::new(Line(end_line), Column(end_col));
+        let offset = self.display_offset();
+        let start = Point::new(Line(start_line) - offset, Column(start_col));
+        let end = Point::new(Line(end_line) - offset, Column(end_col));
         self.term.bounds_to_string(start, end)
     }
 
@@ -689,7 +691,7 @@ mod tests {
         assert_eq!(core.display_offset(), 2);
 
         core.feed(b"four\r\n");
-        assert!(core.display_offset() >= 2);
+        assert_eq!(core.display_offset(), 3);
     }
 
     #[test]

@@ -65,9 +65,7 @@ describe("scrollback through the WASM/input boundary", () => {
     engine.scrollLines(2);
     engine.feed(new TextEncoder().encode("\r\nsix"));
     expect(firstRenderedRow()).toBe("https://example.com");
-    expect(engine.selectedText(-engine.displayOffset, 0, -engine.displayOffset, 18)).toBe(
-      "https://example.com",
-    );
+    expect(engine.selectedText(0, 0, 0, 18)).toBe("https://example.com");
     const bytes = new Uint8Array([120]);
     handleKeyDown(
       state,

@@ -107,9 +107,8 @@ fn cursor_moves_with_viewport_and_disappears_outside_it() {
 fn selection_coordinates_match_visible_history() {
     let mut core = terminal();
     core.scroll_lines(2);
-    let offset = core.display_offset() as i32;
-    assert_eq!(core.selected_text(-offset, 0, -offset, 2), "one");
-    assert_eq!(core.selected_text(1 - offset, 0, 1 - offset, 2), "two");
+    assert_eq!(core.selected_text(0, 0, 0, 2), "one");
+    assert_eq!(core.selected_text(1, 0, 1, 2), "two");
     assert_eq!(rows(&mut core), ["one", "two", "three"]);
 }
 

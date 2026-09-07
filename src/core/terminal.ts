@@ -358,18 +358,12 @@ export class Terminal {
     if (start === null || end === null) return null;
 
     const engine = this.#requireEngine("getSelection");
-    const offset = engine.displayOffset;
     const [top, bottom] =
       start.line < end.line || (start.line === end.line && start.column <= end.column)
         ? [start, end]
         : [end, start];
 
-    const text = engine.selectedText(
-      top.line - offset,
-      top.column,
-      bottom.line - offset,
-      bottom.column,
-    );
+    const text = engine.selectedText(top.line, top.column, bottom.line, bottom.column);
     return text === "" ? null : text;
   }
 

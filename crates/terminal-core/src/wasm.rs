@@ -155,7 +155,7 @@ impl Terminal {
         self.core.take_damage().to_vec()
     }
 
-    /// Text between two grid points, inclusive. `start` must not be after
+    /// Text between two zero-based viewport points, inclusive. `start` must not be after
     /// `end` — see `TerminalCore::selected_text`'s doc comment for why a
     /// reversed range returns an empty string rather than erroring.
     #[wasm_bindgen(js_name = selectedText)]
@@ -170,7 +170,7 @@ impl Terminal {
             .selected_text(start_line, start_col, end_line, end_col)
     }
 
-    /// One row as text. Debugging aid — renderers use `snapshotPtr` and
+    /// One zero-based viewport row as text. Debugging aid — renderers use `snapshotPtr` and
     /// `snapshotLen`.
     #[wasm_bindgen(js_name = rowText)]
     pub fn row_text(&self, line: usize) -> String {
