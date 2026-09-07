@@ -157,7 +157,7 @@ export class Terminal {
     this.#dirty = true;
 
     this.#observer = new ResizeObserver(() => this.#remeasure());
-    this.#observer.observe(this.#host);
+    this.#observer.observe(this.#canvas, { box: "content-box" });
     this.#textInput = createNativeTextInput(this.#host, {
       onText: (text) => this.#sendText(text, false),
       onPaste: (text) => this.#sendText(text, true),

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   }>,
   observers: [] as Array<{
     callback: ResizeObserverCallback;
+    observe: ReturnType<typeof vi.fn>;
     disconnect: ReturnType<typeof vi.fn>;
   }>,
   memory: new ArrayBuffer(80 * 24 * 4 * Uint32Array.BYTES_PER_ELEMENT),
@@ -137,7 +138,7 @@ describe("embedded terminal surface", () => {
           this.callback = callback;
           mocks.observers.push(this);
         }
-        observe(): void {}
+        readonly observe = vi.fn();
       },
     );
     vi.stubGlobal(
@@ -161,6 +162,7 @@ describe("embedded terminal surface", () => {
 
     await terminal.ready;
 
+    expect(mocks.observers[0].observe).toHaveBeenCalledWith(canvas, { box: "content-box" });
     expect(mocks.engines[0].resize).toHaveBeenLastCalledWith(138, 15);
     expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 1108, height: 508 });
 
@@ -174,6 +176,24 @@ describe("embedded terminal surface", () => {
     );
     expect(terminal.getSelection()).toBe("selection");
     expect(mocks.engines[0].selectedText).toHaveBeenLastCalledWith(1, 4, 1, 4);
+    terminal.dispose();
+  });
+
+  it("remeasures an independently resized canvas while the host stays unchanged", async () => {
+    const host = document.createElement("div");
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue(rect(0, 0, 600, 300));
+    const terminal = new Terminal(host, OPTIONS, () => Promise.resolve(renderer()));
+    const canvas = host.querySelector("canvas")!;
+    const bounds = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(rect(0, 0, 400, 200));
+    await terminal.ready;
+    expect(mocks.observers[0].observe).toHaveBeenCalledWith(canvas, { box: "content-box" });
+    const firstSize = [...mocks.engines[0].resize.mock.lastCall!];
+    bounds.mockReturnValue(rect(0, 0, 200, 100));
+    const observer = mocks.observers[0];
+    observer.callback([], observer as unknown as ResizeObserver);
+    expect(mocks.engines[0].resize.mock.lastCall).not.toEqual(firstSize);
+    expect(canvas.width).toBe(400);
+    expect(canvas.height).toBe(200);
     terminal.dispose();
   });
 
