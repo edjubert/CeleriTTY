@@ -105,7 +105,9 @@ describe("Terminal native text input", () => {
 
     expect(input).not.toBeNull();
     expect(input?.tabIndex).toBe(-1);
+    const focus = vi.spyOn(input!, "focus");
     terminal.focus();
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
     expect(document.activeElement).toBe(input);
 
     host.focus();
@@ -172,8 +174,14 @@ describe("Terminal native text input", () => {
     paste("first\nsecond");
     terminal.feed(new TextEncoder().encode("\x1b[?2004h"));
     paste("third\nfourth");
+    paste("safe\x1b[201~\nnot-a-command\n\x9b201~\x1b[20\x1b[201~1~");
 
-    expect(textFrom(data)).toEqual(["first\rsecond", "\x1b[200~third\rfourth\x1b[201~"]);
+    expect(textFrom(data)).toEqual([
+      "first\rsecond",
+      "\x1b[200~third\rfourth\x1b[201~",
+      "\x1b[200~safe[201~\rnot-a-command\r201~[20[201~1~\x1b[201~",
+    ]);
+    expect(textFrom(data)[2].match(/\x1b\[201~/g)).toHaveLength(1);
   });
 
   it("does not steal focus when another instance mounts or a hidden tab reopens", async () => {

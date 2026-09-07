@@ -25,6 +25,12 @@ export function createNativeTextInput(
   host: HTMLElement,
   callbacks: NativeTextInputCallbacks,
 ): NativeTextInput {
+  const originalPosition = host.style.getPropertyValue("position");
+  const originalPriority = host.style.getPropertyPriority("position");
+  const position = host.ownerDocument.defaultView?.getComputedStyle(host).position;
+  const positionHost = !position || position === "static";
+  if (positionHost) host.style.setProperty("position", "relative");
+
   const input = host.ownerDocument.createElement("textarea");
   input.dataset.celerittyInput = "";
   input.setAttribute("aria-label", "Terminal input");
@@ -130,6 +136,16 @@ export function createNativeTextInput(
       input.removeEventListener("input", onInput);
       input.removeEventListener("paste", onPaste);
       input.remove();
+      // Restore only the style we own; preserve later host-side changes.
+      if (
+        positionHost &&
+        host.style.position === "relative" &&
+        !host.style.getPropertyPriority("position")
+      ) {
+        if (originalPosition)
+          host.style.setProperty("position", originalPosition, originalPriority);
+        else host.style.removeProperty("position");
+      }
     },
   };
 }

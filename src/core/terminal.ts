@@ -447,7 +447,10 @@ export class Terminal {
     if (engine === undefined || text === "") return;
 
     const normalized = paste ? text.replace(/\r?\n/g, "\r") : text;
-    const payload = paste && engine.bracketedPaste ? `\x1b[200~${normalized}\x1b[201~` : normalized;
+    // Remove escape introducers rather than only complete delimiters: deleting
+    // one nested delimiter must not synthesize another paste terminator.
+    const safePaste = normalized.replace(/[\x1b\x9b]/g, "");
+    const payload = paste && engine.bracketedPaste ? `\x1b[200~${safePaste}\x1b[201~` : normalized;
     this.#clearSelection();
     engine.resetScroll();
     this.#dirty = true;
