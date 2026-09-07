@@ -66,6 +66,7 @@ export class Terminal {
   #disposed = false;
   #transport: TerminalTransport | undefined;
   #transportOff: Array<() => void> = [];
+  #transportGeneration = 0;
   #selectionStart: CellPoint | null = null;
   #selectionEnd: CellPoint | null = null;
   #dragging = false;
@@ -241,7 +242,10 @@ export class Terminal {
    */
   attach(transport: TerminalTransport): void {
     this.#assertLive("attach");
+    const generation = this.#transportGeneration + 1;
     this.detach();
+    // A newer attach/detach from an unsubscribe callback owns the result.
+    if (this.#disposed || this.#transportGeneration !== generation) return;
 
     this.#transport = transport;
     const subscriptions: Array<() => void> = [];
@@ -286,6 +290,7 @@ export class Terminal {
 
   /** Disconnect. Safe to call when nothing is attached. */
   detach(): void {
+    this.#transportGeneration += 1;
     const subscriptions = this.#transportOff;
     this.#transportOff = [];
     this.#transport = undefined;

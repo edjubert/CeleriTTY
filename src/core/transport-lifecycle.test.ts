@@ -174,6 +174,37 @@ describe("Terminal transport lifecycle", () => {
     terminal.dispose();
   });
 
+  it("keeps a nested attachment made while replacing the old transport", async () => {
+    const { host, terminal } = await mount();
+    const makeTransport = (): TerminalTransport => ({
+      write: vi.fn(),
+      resize: vi.fn(),
+      onData: vi.fn(() => vi.fn()),
+      onClose: vi.fn(() => vi.fn()),
+    });
+    const first = makeTransport();
+    const outer = makeTransport();
+    const nested = makeTransport();
+    const nestedDataOff = vi.fn();
+    nested.onData = vi.fn(() => nestedDataOff);
+    const firstOff = vi.fn(() => terminal.attach(nested));
+    first.onData = vi.fn(() => firstOff);
+    terminal.attach(first);
+    terminal.attach(outer);
+    host.dispatchEvent(new KeyboardEvent("keydown", { key: "a", cancelable: true }));
+    expect(terminal.transport).toBe(nested);
+    expect(firstOff).toHaveBeenCalledOnce();
+    expect(nested.write).toHaveBeenCalledOnce();
+    expect(outer.onData).not.toHaveBeenCalled();
+    expect(outer.write).not.toHaveBeenCalled();
+    expect(first.write).not.toHaveBeenCalled();
+    terminal.detach();
+    expect(nestedDataOff).toHaveBeenCalledOnce();
+    host.dispatchEvent(new KeyboardEvent("keydown", { key: "b", cancelable: true }));
+    expect(nested.write).toHaveBeenCalledOnce();
+    terminal.dispose();
+  });
+
   it("preserves one engine while replaying output across transport replacement", async () => {
     const { terminal } = await mount();
     const firstOff = vi.fn();
