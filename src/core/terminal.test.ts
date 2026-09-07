@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Renderer, RendererFactory } from "../renderer/renderer-interface";
 
 const wasm = vi.hoisted(() => ({
+  free: vi.fn(),
   memory: new ArrayBuffer(80 * 24 * 4 * Uint32Array.BYTES_PER_ELEMENT),
 }));
 
@@ -27,7 +28,7 @@ vi.mock("./wasm", () => ({
     }
     resize(): void {}
     resetScroll(): void {}
-    free(): void {}
+    free = wasm.free;
   },
   encodeKey: vi.fn(),
   engineMemory: () => wasm.memory,
@@ -77,6 +78,7 @@ describe("Terminal lifecycle", () => {
   let nextFrame: number;
 
   beforeEach(() => {
+    wasm.free.mockClear();
     document.body.replaceChildren();
     frames = new Map();
     nextFrame = 1;
@@ -155,6 +157,35 @@ describe("Terminal lifecycle", () => {
     expect(host.querySelector("canvas")).toBeNull();
     expect(host.hasAttribute("tabindex")).toBe(false);
     expect(frames).toHaveLength(0);
+  });
+
+  it("retains the engine and retries after one failing frame with a recording-only listener", async () => {
+    const error = new Error("transient frame failure");
+    const render = vi.fn().mockImplementationOnce(() => {
+      throw error;
+    });
+    const renderer = createRenderer(render);
+    const host = document.createElement("div");
+    const terminal = new Terminal(host, OPTIONS, () => Promise.resolve(renderer));
+    await terminal.ready;
+    const errors = vi.fn();
+    terminal.on("error", errors);
+    const runFrame = () => {
+      const [id, frame] = [...frames.entries()][0];
+      frames.delete(id);
+      frame(0);
+    };
+    runFrame();
+    expect(errors).toHaveBeenCalledWith(error);
+    expect(wasm.free).not.toHaveBeenCalled();
+    expect(renderer.dispose).not.toHaveBeenCalled();
+    expect(host.querySelector("canvas")).not.toBeNull();
+    expect(frames).toHaveLength(1);
+    runFrame();
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(errors).toHaveBeenCalledOnce();
+    terminal.dispose();
+    expect(wasm.free).toHaveBeenCalledOnce();
   });
 
   it("does not schedule another frame after an error listener disposes it", async () => {

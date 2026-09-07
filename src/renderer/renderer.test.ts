@@ -64,6 +64,11 @@ describe("TerminalRenderer lifecycle", () => {
     const allocated = device.createBuffer.mock.results.map(({ value }) => value);
     renderer.dispose();
     renderer.dispose();
+    expect(() =>
+      renderer.render({ columns: 1, lines: 1, packed: new Uint32Array(4) }),
+    ).not.toThrow();
+    expect(() => renderer.setAtlas(ATLAS)).toThrow("after dispose");
+    expect(() => renderer.setPalette(new Map())).toThrow("after dispose");
 
     expect(context.unconfigure).toHaveBeenCalledOnce();
     expect(allocated[0].destroy).toHaveBeenCalledOnce();

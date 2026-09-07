@@ -1,3 +1,4 @@
+import { safely } from "../shared/disposal";
 /**
  * A terminal bound to a host element.
  *
@@ -326,13 +327,12 @@ export class Terminal {
         renderer.render({ columns: engine.columns, lines: engine.screenLines, packed });
         this.#dirty = false;
       } catch (error) {
-        // A rendering failure is fatal for this renderer. Report it once and
-        // synchronously release the surface so the host can mount a fallback.
-        // `finally` matters when a listener itself throws.
+        // A single failed frame does not imply device loss. Keep the engine
+        // and its history alive; asynchronous renderer fatality is separate.
         try {
           this.#emit("error", error instanceof Error ? error : new Error(String(error)));
         } finally {
-          this.dispose();
+          if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
         }
         return;
       }
@@ -500,15 +500,5 @@ export class Terminal {
     if (this.#disposed) {
       throw new Error(`Terminal.${method}() was called after dispose().`);
     }
-  }
-}
-
-/** Best-effort teardown must not strand later resources when one hook throws. */
-function safely(cleanup: (() => void) | undefined): void {
-  if (cleanup === undefined) return;
-  try {
-    cleanup();
-  } catch {
-    // Disposal is terminal and idempotent; there is no useful recovery here.
   }
 }

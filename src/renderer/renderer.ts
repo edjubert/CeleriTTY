@@ -1,3 +1,4 @@
+import { safely } from "../shared/disposal";
 /**
  * WebGPU pipeline that draws a terminal grid.
  *
@@ -147,7 +148,7 @@ export class TerminalRenderer implements Renderer {
 
   /** Draw one frame. */
   render(grid: RendererGrid): void {
-    this.#assertLive("render");
+    if (this.#disposed) return;
     // Order matters, and both steps have to precede the upload:
     //   1. rasterize every code point, so the atlas reaches its final height
     //      before any texture coordinate is normalized against it;
@@ -284,14 +285,6 @@ export class TerminalRenderer implements Renderer {
 }
 
 /** Continue releasing the rest of a device even if one resource hook throws. */
-function safely(cleanup: (() => void) | undefined): void {
-  if (cleanup === undefined) return;
-  try {
-    cleanup();
-  } catch {
-    // A failed cleanup has no recovery path; the device is destroyed last.
-  }
-}
 
 /**
  * The WebGPU implementation of `RendererFactory`.
