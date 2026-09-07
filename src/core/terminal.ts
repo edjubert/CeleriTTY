@@ -142,9 +142,10 @@ export class Terminal {
       throw startupRendererError;
     }
     this.#unbindRendererDiagnostic = this.#renderer.onDiagnostic?.((error) => {
-      if (!this.#disposed) this.#emit("error", error);
+      if (!this.#disposed) this.#emit("diagnostic", error);
     });
 
+    this.#assertLive("start");
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
     this.#engine = engine;

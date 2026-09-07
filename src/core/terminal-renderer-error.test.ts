@@ -151,18 +151,23 @@ describe("Terminal renderer failures", () => {
     await terminal.ready;
     const errors = vi.fn();
     terminal.on("error", errors);
+    const diagnostics = vi.fn();
+    terminal.on("diagnostic", diagnostics);
     diagnostic(new Error("validation"));
     diagnostic(new Error("out of memory"));
-    expect(errors).toHaveBeenCalledTimes(2);
+    expect(diagnostics).toHaveBeenCalledTimes(2);
+    expect(errors).not.toHaveBeenCalled();
     expect(wasm.free).not.toHaveBeenCalled();
     expect(renderer.dispose).not.toHaveBeenCalled();
     fatal(new Error("lost"));
-    expect(errors).toHaveBeenCalledTimes(3);
+    expect(errors).toHaveBeenCalledOnce();
+    expect(diagnostics).toHaveBeenCalledTimes(2);
     expect(wasm.free).toHaveBeenCalledOnce();
     expect(renderer.dispose).toHaveBeenCalledOnce();
     fatal(new Error("late loss"));
     diagnostic(new Error("late diagnostic"));
-    expect(errors).toHaveBeenCalledTimes(3);
+    expect(errors).toHaveBeenCalledOnce();
+    expect(diagnostics).toHaveBeenCalledTimes(2);
   });
 
   it("surfaces asynchronous renderer failure and releases the unusable terminal", async () => {

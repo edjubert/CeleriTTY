@@ -114,6 +114,7 @@ new WebSocketServer({ port: 8080 }).on("connection", (socket) => {
 | `link-activate` | `{ url, modifiers: { ctrl, alt, shift, meta } }` |
 | `link-hover` | `string \| null` — the URL under the pointer, or `null` on leave |
 | `error` | `Error` |
+| `diagnostic` | `Error` — non-fatal GPU call failure; no automatic teardown |
 
 Attributes cover font and scrollback only. A page that never assigns
 `options` gets no colours.
@@ -134,11 +135,16 @@ term.attach(myTransport);
 
 ### WebGPU failure and fallback
 
+Uncaptured GPU errors are non-fatal diagnostics: `Renderer.onDiagnostic` forwards
+these to the terminal's `diagnostic` event without latching a fatal failure.
+`Renderer.onError` is reserved for device loss, so an earlier diagnostic cannot
+hide a later lost device. Both renderer subscription hooks are optional.
+
 `Terminal.ready` rejects when WebAssembly or WebGPU initialization fails. This
 includes a missing `navigator.gpu`, no adapter, device creation failure, and
 canvas or pipeline setup failure. After initialization, asynchronous device
-loss and uncaptured WebGPU errors are reported through the terminal's `error`
-event and make that terminal instance unusable.
+loss is reported through the terminal's `error`
+event and makes that terminal instance unusable.
 
 Register the runtime listener before awaiting `ready`, and use one guarded path
 for both kinds of failure:
@@ -155,6 +161,8 @@ function useFallback(error: unknown) {
 }
 
 term.on("error", useFallback);
+// Diagnostics do not lose the device or discard the terminal's history.
+term.on("diagnostic", (error) => console.warn(error));
 
 try {
   await term.ready;
