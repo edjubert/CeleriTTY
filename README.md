@@ -234,7 +234,7 @@ not currently supported.
 interface TerminalTransport {
   write(bytes: Uint8Array): void;
   resize(columns: number, rows: number): void;
-  onData(cb: (bytes: Uint8Array) => void): () => void;
+  onData(cb: (bytes: Uint8Array, options?: { replyToQueries?: boolean }) => void): () => void;
   onClose(cb: (reason?: string) => void): () => void;
 }
 ```
