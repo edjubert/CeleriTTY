@@ -181,6 +181,7 @@ describe("Terminal native text input", () => {
       "\x1b[200~third\rfourth\x1b[201~",
       "\x1b[200~safe[201~\rnot-a-command\r201~[20[201~1~\x1b[201~",
     ]);
+    // eslint-disable-next-line no-control-regex -- Count literal ESC delimiters to verify paste cannot close its own bracket.
     expect(textFrom(data)[2].match(/\x1b\[201~/g)).toHaveLength(1);
   });
 

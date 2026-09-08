@@ -184,6 +184,10 @@ CeleriTTY owns one native textarea per terminal. Physical keys still use the
 terminal encoder, while the textarea supplies IME composition, dead keys,
 Unicode input, mobile keyboards, and paste without duplicate commits. Paste
 normalizes line endings and follows the application's bracketed-paste mode.
+In bracketed-paste mode, literal ESC (`\x1b`) and C1 CSI (`\x9b`) control
+characters are removed from the content to prevent premature termination;
+scripts or logs containing those characters therefore lose those bytes.
+Non-bracketed paste preserves them.
 
 Call `term.focus()` to focus that native surface with `preventScroll`. The host
 remains the only tab stop, and mounting or revealing another terminal never

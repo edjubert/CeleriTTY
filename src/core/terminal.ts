@@ -449,6 +449,7 @@ export class Terminal {
     const normalized = paste ? text.replace(/\r?\n/g, "\r") : text;
     // Remove escape introducers rather than only complete delimiters: deleting
     // one nested delimiter must not synthesize another paste terminator.
+    // eslint-disable-next-line no-control-regex -- Strip control introducers to prevent bracketed-paste injection.
     const safePaste = normalized.replace(/[\x1b\x9b]/g, "");
     const payload = paste && engine.bracketedPaste ? `\x1b[200~${safePaste}\x1b[201~` : normalized;
     this.#clearSelection();
