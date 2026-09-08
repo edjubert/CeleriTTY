@@ -1,4 +1,3 @@
-import { safely } from "../shared/disposal";
 /**
  * WebGPU pipeline that draws a terminal grid.
  *
@@ -6,6 +5,7 @@ import { safely } from "../shared/disposal";
  * caller decides when to draw, so a hidden panel can simply stop calling it.
  */
 
+import { safely } from "../shared/disposal";
 import type { AtlasTexture, Renderer, RendererFactory, RendererGrid } from "./renderer-interface";
 import { buildInstanceData, ensureGlyphs, FLOATS_PER_INSTANCE } from "./instance-data";
 import { buildPaletteBuffer, PALETTE_ENTRIES } from "./palette";

@@ -1,4 +1,3 @@
-import { safely } from "../shared/disposal";
 /**
  * A terminal bound to a host element.
  *
@@ -8,6 +7,7 @@ import { safely } from "../shared/disposal";
  * Plan 07 adds a transport on top of exactly those two.
  */
 
+import { safely } from "../shared/disposal";
 import { GlyphAtlas } from "../renderer/atlas";
 import type { GridSize } from "../renderer/grid-metrics";
 import { createWebGpuRenderer } from "../renderer/renderer";
