@@ -332,3 +332,11 @@ every replay chunk; omit it again for live output. The terminal cannot infer
 whether a byte stream is live or historical. Suppressed replies are drained and
 discarded immediately, never deferred until the next live chunk. `write(text)`
 is always local-only and uses this suppression internally.
+
+The host must place the replay-to-live boundary between escape sequences, not
+inside one. Reply suppression applies to the chunk that completes a query:
+if replay ends with `\x1b[6` and live output starts with `n`, the completed
+cursor-position query is answered and a reply for historical content reaches
+the live shell. Byte-capped replay buffers must therefore end at a sequence
+boundary; suppressing the first live chunk instead could discard legitimate
+live queries.
