@@ -239,6 +239,9 @@ export class Terminal {
    *
    * Attaching over an existing transport detaches the old one first, rather
    * than quietly ending up with two sockets writing to the same grid.
+   * If an unsubscribe callback attaches or detaches, that newer operation
+   * wins and this call does not attach its requested transport. Read
+   * `transport` afterwards to discover the resulting attachment.
    */
   attach(transport: TerminalTransport): void {
     this.#assertLive("attach");

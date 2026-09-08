@@ -205,6 +205,38 @@ describe("Terminal transport lifecycle", () => {
     terminal.dispose();
   });
 
+  it("leaves no attachment when an unsubscribe detaches during replacement", async () => {
+    const { host, terminal } = await mount();
+    const firstOff = vi.fn(() => terminal.detach());
+    const closeOff = vi.fn();
+    const first: TerminalTransport = {
+      write: vi.fn(),
+      resize: vi.fn(),
+      onData: vi.fn(() => firstOff),
+      onClose: vi.fn(() => closeOff),
+    };
+    const outer: TerminalTransport = {
+      write: vi.fn(),
+      resize: vi.fn(),
+      onData: vi.fn(() => vi.fn()),
+      onClose: vi.fn(() => vi.fn()),
+    };
+    terminal.attach(first);
+    terminal.attach(outer);
+    expect(terminal.transport).toBeUndefined();
+    expect(firstOff).toHaveBeenCalledOnce();
+    expect(closeOff).toHaveBeenCalledOnce();
+    expect(outer.onData).not.toHaveBeenCalled();
+    expect(outer.onClose).not.toHaveBeenCalled();
+    expect(outer.resize).not.toHaveBeenCalled();
+    host.dispatchEvent(new KeyboardEvent("keydown", { key: "a", cancelable: true }));
+    expect(first.write).not.toHaveBeenCalled();
+    expect(outer.write).not.toHaveBeenCalled();
+    terminal.dispose();
+    expect(firstOff).toHaveBeenCalledOnce();
+    expect(closeOff).toHaveBeenCalledOnce();
+  });
+
   it("preserves one engine while replaying output across transport replacement", async () => {
     const { terminal } = await mount();
     const firstOff = vi.fn();
