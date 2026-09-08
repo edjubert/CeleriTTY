@@ -122,6 +122,30 @@ describe("WebGPU device loss", () => {
     renderer.dispose();
   });
 
+  it.each([false, true])(
+    "ignores subscriptions after disposal (cached failure: %s)",
+    async (failed) => {
+      const { renderer, lose } = await gpuRenderer();
+      if (failed) {
+        lose({ reason: "unknown", message: "early loss" } as GPUDeviceLostInfo);
+        await Promise.resolve();
+      }
+      renderer.dispose();
+      const listener = vi.fn();
+      const add = vi.spyOn(Set.prototype, "add");
+      const offError = renderer.onError(listener);
+      const offDiagnostic = renderer.onDiagnostic(listener);
+      const retained = add.mock.calls.some(([value]) => value === listener);
+      add.mockRestore();
+      expect(retained).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+      expect(() => {
+        offError();
+        offDiagnostic();
+      }).not.toThrow();
+    },
+  );
+
   it("reports an unexpected lost device to renderer consumers", async () => {
     let loseDevice!: (info: GPUDeviceLostInfo) => void;
     const lost = new Promise<GPUDeviceLostInfo>((resolve) => {

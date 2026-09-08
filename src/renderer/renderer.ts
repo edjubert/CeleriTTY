@@ -142,6 +142,7 @@ export class TerminalRenderer implements Renderer {
 
   /** Observe failures reported asynchronously by the WebGPU device. */
   onError(listener: (error: Error) => void): () => void {
+    if (this.#disposed) return () => {};
     if (this.#failure !== undefined) {
       listener(this.#failure);
       return () => {};
