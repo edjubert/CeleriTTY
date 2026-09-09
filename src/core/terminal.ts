@@ -7,6 +7,7 @@
  * Plan 07 adds a transport on top of exactly those two.
  */
 
+import { safely } from "../shared/disposal";
 import { GlyphAtlas } from "../renderer/atlas";
 import type { GridSize } from "../renderer/grid-metrics";
 import { createWebGpuRenderer } from "../renderer/renderer";
@@ -46,6 +47,7 @@ export class Terminal {
   readonly #canvas: HTMLCanvasElement;
   readonly #createRenderer: RendererFactory;
   readonly #listeners = new Map<TerminalEvent, Set<AnyListener>>();
+  readonly #addedTabIndex: boolean;
 
   #options: TerminalOptions;
   #engine: InstanceType<typeof EngineTerminal> | undefined;
@@ -80,9 +82,16 @@ export class Terminal {
     this.#canvas.style.width = "100%";
     this.#canvas.style.height = "100%";
     host.appendChild(this.#canvas);
-    if (!host.hasAttribute("tabindex")) host.setAttribute("tabindex", "0");
+    this.#addedTabIndex = !host.hasAttribute("tabindex");
+    if (this.#addedTabIndex) host.setAttribute("tabindex", "0");
 
-    this.ready = this.#start();
+    this.ready = this.#start().catch((error: unknown) => {
+      // A failed startup must leave the host ready for a compatibility
+      // renderer, even when the caller only observes `ready` and never calls
+      // `dispose()` itself.
+      this.dispose();
+      throw error;
+    });
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -100,12 +109,21 @@ export class Terminal {
       },
       window.devicePixelRatio,
     );
-    const renderer = await this.#createRenderer(this.#canvas, atlas);
-    this.#assertLive("start");
+    let renderer: Renderer | undefined;
+    try {
+      renderer = await this.#createRenderer(this.#canvas, atlas);
+      this.#assertLive("start");
 
-    renderer.setPalette(buildPaletteOverrides(this.#options.colors));
-    this.#atlas = atlas;
-    this.#renderer = renderer;
+      renderer.setPalette(buildPaletteOverrides(this.#options.colors));
+      this.#atlas = atlas;
+      this.#renderer = renderer;
+      renderer = undefined;
+    } finally {
+      // Cancellation can happen while the asynchronous renderer factory is
+      // acquiring a GPU device. If it completes afterwards, the renderer was
+      // never transferred to the terminal and must be released here.
+      safely(renderer?.dispose.bind(renderer));
+    }
 
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
@@ -131,15 +149,23 @@ export class Terminal {
     if (this.#disposed) return;
     this.#disposed = true;
     cancelAnimationFrame(this.#frame);
-    this.#observer?.disconnect();
-    this.#unbindInput?.();
-    this.#renderer?.dispose();
+    this.#frame = 0;
+    safely(this.#observer?.disconnect.bind(this.#observer));
+    this.#observer = undefined;
+    safely(this.#unbindInput);
+    this.#unbindInput = undefined;
+    safely(this.#renderer?.dispose.bind(this.#renderer));
+    this.#renderer = undefined;
+    this.#atlas = undefined;
     this.#canvas.remove();
     this.#host.style.cursor = "";
     this.detach();
     this.#listeners.clear();
-    this.#engine?.free();
+    safely(this.#engine?.free.bind(this.#engine));
     this.#engine = undefined;
+    if (this.#addedTabIndex && this.#host.getAttribute("tabindex") === "0") {
+      this.#host.removeAttribute("tabindex");
+    }
   }
 
   // ------------------------------------------------------------------- events
@@ -209,9 +235,10 @@ export class Terminal {
 
   /** Disconnect. Safe to call when nothing is attached. */
   detach(): void {
-    for (const off of this.#transportOff) off();
+    const subscriptions = this.#transportOff;
     this.#transportOff = [];
     this.#transport = undefined;
+    for (const off of subscriptions) safely(off);
   }
 
   /** Inject text as if the program had printed it. Does not reach the PTY. */
@@ -287,6 +314,9 @@ export class Terminal {
   // --------------------------------------------------------------- internals
 
   #draw(): void {
+    this.#frame = 0;
+    if (this.#disposed) return;
+
     const engine = this.#engine;
     const renderer = this.#renderer;
     if (engine !== undefined && renderer !== undefined && this.#dirty) {
@@ -297,15 +327,17 @@ export class Terminal {
         renderer.render({ columns: engine.columns, lines: engine.screenLines, packed });
         this.#dirty = false;
       } catch (error) {
-        // A thrown frame must not silently kill the render loop forever —
-        // without this, the terminal goes blank with nothing further in the
-        // console, which is much harder to diagnose than a loud repeated
-        // error. This does not make the frame's content correct; it only
-        // keeps the loop (and any future recovery) alive.
-        this.#emit("error", error instanceof Error ? error : new Error(String(error)));
+        // A single failed frame does not imply device loss. Keep the engine
+        // and its history alive; asynchronous renderer fatality is separate.
+        try {
+          this.#emit("error", error instanceof Error ? error : new Error(String(error)));
+        } finally {
+          if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
+        }
+        return;
       }
     }
-    this.#frame = requestAnimationFrame(() => this.#draw());
+    if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
   }
 
   #remeasure(): void {

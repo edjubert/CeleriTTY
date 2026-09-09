@@ -43,8 +43,8 @@ export interface Renderer {
   render(grid: RendererGrid): void;
 
   /**
-   * Release every GPU resource. Calling any other method afterwards is a
-   * programming error and implementations should throw rather than no-op.
+   * Release every GPU resource. Late render calls are harmless no-ops;
+   * configuration calls after disposal are programming errors and throw.
    */
   dispose(): void;
 }
