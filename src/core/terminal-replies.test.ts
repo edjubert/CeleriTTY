@@ -106,6 +106,24 @@ describe("terminal protocol replies", () => {
     expect(write).toHaveBeenCalledExactlyOnceWith(encode("\x1b[0n"));
   });
 
+  it("suppresses synchronous replay and routes live replies during attachment", () => {
+    const write = vi.fn();
+    terminal.attach({
+      write,
+      resize: vi.fn(),
+      onData: (receive) => {
+        receive(encode("history\x1b[6"), { replyToQueries: false });
+        receive(encode("n"), { replyToQueries: false });
+        expect(write).not.toHaveBeenCalled();
+        receive(encode("\x1b[5n"));
+        expect(write).toHaveBeenCalledExactlyOnceWith(encode("\x1b[0n"));
+        return () => {};
+      },
+      onClose: () => () => {},
+    });
+    expect(write).toHaveBeenCalledOnce();
+  });
+
   it("supports direct replay without leaking queued replies into the next feed", () => {
     const output: string[] = [];
     terminal.on("data", (bytes) => output.push(decode(bytes)));
