@@ -44,7 +44,10 @@ async function gpuRenderer() {
   });
   vi.stubGlobal("GPUBufferUsage", { UNIFORM: 1, COPY_DST: 2 });
   const canvas = document.createElement("canvas");
-  vi.spyOn(canvas, "getContext").mockReturnValue({ configure: vi.fn() } as never);
+  vi.spyOn(canvas, "getContext").mockReturnValue({
+    configure: vi.fn(),
+    unconfigure: vi.fn(),
+  } as never);
   const renderer = await TerminalRenderer.create(canvas, ATLAS);
   const uncaptured = device.addEventListener.mock.calls.find(
     ([type]) => type === "uncapturederror",
