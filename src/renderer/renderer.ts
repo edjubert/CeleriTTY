@@ -26,6 +26,14 @@ export class TerminalRenderer implements Renderer {
   #texture: GPUTexture | undefined;
   #sampler: GPUSampler;
   #disposed = false;
+  #failure: Error | undefined;
+  readonly #errorListeners = new Set<(error: Error) => void>();
+  readonly #diagnosticListeners = new Set<(error: Error) => void>();
+  readonly #onUncapturedError = (event: GPUUncapturedErrorEvent): void => {
+    if (this.#disposed) return;
+    const error = new Error(`Uncaptured WebGPU error: ${event.error.message}`);
+    for (const listener of Array.from(this.#diagnosticListeners)) listener(error);
+  };
 
   private constructor(
     device: GPUDevice,
@@ -49,6 +57,15 @@ export class TerminalRenderer implements Renderer {
     this.#sampler = device.createSampler({
       magFilter: "linear",
       minFilter: "linear",
+    });
+
+    device.addEventListener("uncapturederror", this.#onUncapturedError);
+    void device.lost.then((info) => {
+      if (this.#disposed || info.reason === "destroyed") return;
+      const detail = info.message.trim();
+      this.#reportError(
+        new Error(detail === "" ? "WebGPU device lost." : `WebGPU device lost: ${detail}`),
+      );
     });
   }
 
@@ -121,6 +138,27 @@ export class TerminalRenderer implements Renderer {
       safely(device.destroy.bind(device));
       throw error;
     }
+  }
+
+  /** Observe failures reported asynchronously by the WebGPU device. */
+  onError(listener: (error: Error) => void): () => void {
+    if (this.#disposed) return () => {};
+    if (this.#failure !== undefined) {
+      listener(this.#failure);
+      return () => {};
+    }
+    this.#errorListeners.add(listener);
+    return () => {
+      this.#errorListeners.delete(listener);
+    };
+  }
+
+  onDiagnostic(listener: (error: Error) => void): () => void {
+    if (this.#disposed) return () => {};
+    this.#diagnosticListeners.add(listener);
+    return () => {
+      this.#diagnosticListeners.delete(listener);
+    };
   }
 
   /** Replace the theme. Rewrites one uniform buffer; never touches the atlas. */
@@ -231,6 +269,9 @@ export class TerminalRenderer implements Renderer {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    safely(() => this.#device.removeEventListener("uncapturederror", this.#onUncapturedError));
+    this.#errorListeners.clear();
+    this.#diagnosticListeners.clear();
     safely(this.#texture?.destroy.bind(this.#texture));
     this.#texture = undefined;
     safely(this.#instanceBuffer?.destroy.bind(this.#instanceBuffer));
@@ -240,6 +281,12 @@ export class TerminalRenderer implements Renderer {
     safely(this.#paletteBuffer.destroy.bind(this.#paletteBuffer));
     safely(this.#context.unconfigure.bind(this.#context));
     safely(this.#device.destroy.bind(this.#device));
+  }
+
+  #reportError(error: Error): void {
+    if (this.#disposed || this.#failure !== undefined) return;
+    this.#failure = error;
+    for (const listener of Array.from(this.#errorListeners)) listener(error);
   }
 
   #uploadAtlasIfDirty(): void {

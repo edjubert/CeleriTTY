@@ -15,7 +15,9 @@ transport.
 
 ## Requirements
 
-- A browser with WebGPU. There is no Canvas 2D or DOM fallback.
+- The bundled renderer needs WebGPU. There is no bundled Canvas 2D or DOM
+  renderer; hosts can provide their own compatibility terminal as described
+  below.
 - A backend that speaks [`PROTOCOL.md`](PROTOCOL.md), or your own transport.
 
 ## Install
@@ -112,6 +114,7 @@ new WebSocketServer({ port: 8080 }).on("connection", (socket) => {
 | `link-activate` | `{ url, modifiers: { ctrl, alt, shift, meta } }` |
 | `link-hover` | `string \| null` — the URL under the pointer, or `null` on leave |
 | `error` | `Error` |
+| `diagnostic` | `Error` — non-fatal GPU call failure; no automatic teardown |
 
 Attributes cover font and scrollback only. A page that never assigns
 `options` gets no colours.
@@ -129,6 +132,51 @@ await term.ready;
 
 term.attach(myTransport);
 ```
+
+### WebGPU failure and fallback
+
+Uncaptured GPU errors are non-fatal diagnostics: `Renderer.onDiagnostic` forwards
+these to the terminal's `diagnostic` event without latching a fatal failure.
+`Renderer.onError` is reserved for device loss, so an earlier diagnostic cannot
+hide a later lost device. Both renderer subscription hooks are optional.
+
+`Terminal.ready` rejects when WebAssembly or WebGPU initialization fails. This
+includes a missing `navigator.gpu`, no adapter, device creation failure, and
+canvas or pipeline setup failure. After initialization, asynchronous device
+loss is reported through the terminal's `error`
+event and makes that terminal instance unusable.
+
+Register the runtime listener before awaiting `ready`, and use one guarded path
+for both kinds of failure:
+
+```ts
+const term = new Terminal(host, options);
+let usingFallback = false;
+
+function useFallback(error: unknown) {
+  if (usingFallback) return;
+  usingFallback = true;
+  term.dispose();
+  mountCompatibilityTerminal(host, error);
+}
+
+term.on("error", useFallback);
+// Diagnostics do not lose the device or discard the terminal's history.
+term.on("diagnostic", (error) => console.warn(error));
+
+try {
+  await term.ready;
+  term.attach(transport);
+} catch (error) {
+  useFallback(error);
+}
+```
+
+The host owns fallback selection and loading, so a heavyweight compatibility
+renderer does not enter bundles that only support WebGPU. Keep the PTY/session
+outside either renderer. A fallback mounted after output has already arrived
+must obtain a snapshot or replay from that session; CeleriTTY does not transfer
+its private WASM grid into another terminal implementation.
 
 | Method | |
 |---|---|
@@ -180,7 +228,8 @@ the file from disk — the one part of this a browser cannot do.
 
 ## Limits
 
-- WebGPU only; no fallback renderer.
+- The package includes only a WebGPU renderer; fallback selection belongs to
+  the host and follows the contract above.
 - No IME or composition. Dead keys and CJK input are not handled.
 - No accessibility tree. The grid is a canvas; a screen reader sees nothing.
 - No addon API.

@@ -48,6 +48,9 @@ describe("TerminalRenderer lifecycle", () => {
       unconfigure: vi.fn(),
     };
     const device = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      lost: new Promise<GPUDeviceLostInfo>(() => {}),
       createBuffer: vi.fn(() => buffers.shift()!),
       createPipelineLayout: vi.fn(),
       createRenderPipeline: vi.fn(() => ({})),

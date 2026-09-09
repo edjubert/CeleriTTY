@@ -55,6 +55,8 @@ export class Terminal {
   #atlas: GlyphAtlas | undefined;
   #observer: ResizeObserver | undefined;
   #unbindInput: (() => void) | undefined;
+  #unbindRendererDiagnostic: (() => void) | undefined;
+  #unbindRendererError: (() => void) | undefined;
   #frame = 0;
   #dirty = true;
   #grid: GridSize = { columns: 1, lines: 1 };
@@ -125,9 +127,29 @@ export class Terminal {
       safely(renderer?.dispose.bind(renderer));
     }
 
+    let starting = true;
+    let startupRendererError: Error | undefined;
+    this.#unbindRendererError = this.#renderer.onError?.((error) => {
+      if (this.#disposed) return;
+      if (starting) {
+        startupRendererError = error;
+        return;
+      }
+      this.#handleRendererError(error);
+    });
+    if (startupRendererError !== undefined) {
+      this.dispose();
+      throw startupRendererError;
+    }
+    this.#unbindRendererDiagnostic = this.#renderer.onDiagnostic?.((error) => {
+      if (!this.#disposed) this.#emit("diagnostic", error);
+    });
+
+    this.#assertLive("start");
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
     this.#engine = engine;
+    starting = false;
     this.#grid = { columns: 80, lines: 24 };
     this.#dirty = true;
 
@@ -154,6 +176,10 @@ export class Terminal {
     this.#observer = undefined;
     safely(this.#unbindInput);
     this.#unbindInput = undefined;
+    safely(this.#unbindRendererError);
+    this.#unbindRendererError = undefined;
+    safely(this.#unbindRendererDiagnostic);
+    this.#unbindRendererDiagnostic = undefined;
     safely(this.#renderer?.dispose.bind(this.#renderer));
     this.#renderer = undefined;
     this.#atlas = undefined;
@@ -338,6 +364,17 @@ export class Terminal {
       }
     }
     if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
+  }
+
+  #handleRendererError(error: Error): void {
+    if (this.#disposed) return;
+    try {
+      this.#emit("error", error);
+    } finally {
+      // A lost device cannot render a future frame. Clear the canvas and the
+      // pending animation frame so the host can activate a compatibility path.
+      this.dispose();
+    }
   }
 
   #remeasure(): void {

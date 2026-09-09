@@ -115,6 +115,8 @@ export interface TerminalEventMap {
    * instead.
    */
   error: Error;
+  /** A non-fatal renderer diagnostic; the engine and session remain alive. */
+  diagnostic: Error;
 }
 
 export type TerminalEvent = keyof TerminalEventMap;
