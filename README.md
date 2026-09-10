@@ -219,8 +219,8 @@ not currently supported.
 | Method | |
 |---|---|
 | `attach(transport)` / `detach()` | connect and disconnect |
-| `feed(bytes)` | process output in |
-| `write(text)` | inject text locally; does not reach the process |
+| `feed(bytes, options?)` | live process output in; parser replies go to `data` / the attached transport. Set `{ replyToQueries: false }` for replayed history |
+| `write(text)` | inject text locally; parser replies are discarded, so it does not reach the process |
 | `setOptions(patch)` | applies live; a colour change does not rebuild the glyph atlas |
 | `focus()` / `blur()` / `clearScreen()` | |
 | `getSelection()` / `copySelection()` | |
@@ -234,7 +234,7 @@ not currently supported.
 interface TerminalTransport {
   write(bytes: Uint8Array): void;
   resize(columns: number, rows: number): void;
-  onData(cb: (bytes: Uint8Array) => void): () => void;
+  onData(cb: (bytes: Uint8Array, options?: { replyToQueries?: boolean }) => void): () => void;
   onClose(cb: (reason?: string) => void): () => void;
 }
 ```
@@ -321,3 +321,22 @@ celeritty name: use it to refer to this project, not to brand yours.
 [`alacritty_terminal`](https://github.com/alacritty/alacritty), Copyright The
 Alacritty Project, also Apache-2.0. It keeps its own licence file alongside
 the vendored source.
+
+### Live output versus replay
+
+`feed(bytes)` answers terminal protocol queries by default. Replayed history
+must not generate new input for the live shell. A host feeding history directly
+must use `terminal.feed(history, { replyToQueries: false })`. A custom transport
+must pass the same option as the second argument to its `onData` callback for
+every replay chunk; omit it again for live output. The terminal cannot infer
+whether a byte stream is live or historical. Suppressed replies are drained and
+discarded immediately, never deferred until the next live chunk. `write(text)`
+is always local-only and uses this suppression internally.
+
+The host must place the replay-to-live boundary between escape sequences, not
+inside one. Reply suppression applies to the chunk that completes a query:
+if replay ends with `\x1b[6` and live output starts with `n`, the completed
+cursor-position query is answered and a reply for historical content reaches
+the live shell. Byte-capped replay buffers must therefore end at a sequence
+boundary; suppressing the first live chunk instead could discard legitimate
+live queries.

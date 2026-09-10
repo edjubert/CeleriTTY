@@ -19,6 +19,9 @@ vi.mock("./wasm", () => ({
     readonly alternateScroll = false;
     readonly altScreen = false;
     readonly feed = vi.fn();
+    takeOutput(): Uint8Array {
+      return new Uint8Array();
+    }
     constructor() {
       mocks.engines.push(this);
     }

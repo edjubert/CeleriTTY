@@ -1,23 +1,13 @@
 //! Drives an `alacritty_terminal` grid from a raw ANSI byte stream.
 
-use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
 use vte::ansi::Processor;
 
+use crate::pty_output::PtyOutput;
 use crate::snapshot::{encode_color, WORDS_PER_CELL};
-
-/// `Term` reports host-level events (bell, title changes, clipboard requests)
-/// through this trait. None of them are acted on yet — the renderer will decide
-/// which ones matter once it exists.
-#[derive(Clone)]
-struct NoopListener;
-
-impl EventListener for NoopListener {
-    fn send_event(&self, _event: Event) {}
-}
 
 /// Viewport dimensions, in cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +44,8 @@ impl Dimensions for TerminalSize {
 
 /// An ANSI-driven terminal grid: feed it PTY bytes, read cells back.
 pub struct TerminalCore {
-    term: Term<NoopListener>,
+    term: Term<PtyOutput>,
+    pty_output: PtyOutput,
     parser: Processor,
     /// Reused across frames: rewritten in place by `refresh_snapshot` so no
     /// allocation happens on the render path.
@@ -67,8 +58,10 @@ impl TerminalCore {
     pub fn new(size: TerminalSize) -> Self {
         let size = size.clamped();
         let cells = size.columns * size.screen_lines;
+        let pty_output = PtyOutput::default();
         Self {
-            term: Term::new(Config::default(), &size, NoopListener),
+            term: Term::new(Config::default(), &size, pty_output.clone()),
+            pty_output,
             parser: Processor::new(),
             packed: vec![0; cells * WORDS_PER_CELL],
             damage: Vec::new(),
@@ -80,6 +73,11 @@ impl TerminalCore {
     pub fn feed(&mut self, bytes: &[u8]) {
         self.parser.advance(&mut self.term, bytes);
         self.reset_scroll();
+    }
+
+    /// Drain terminal protocol replies generated while parsing PTY output.
+    pub fn take_output(&mut self) -> Vec<u8> {
+        self.pty_output.take()
     }
 
     pub fn resize(&mut self, size: TerminalSize) {
