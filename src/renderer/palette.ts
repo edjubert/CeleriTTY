@@ -52,15 +52,33 @@ export function decodeColor(packed: number): DecodedColor {
 /**
  * Build the palette uniform buffer: four floats (rgba, 0..1) per entry.
  *
- * `overrides` maps a palette index to a `#rrggbb` color from the active theme;
- * unspecified entries stay opaque black, which is visible rather than
- * transparent so a missing theme entry shows up instead of silently vanishing.
+ * Slots 16..255 start with the xterm 256-color cube and grayscale ramp.
+ * `overrides` maps a palette index to a `#rrggbb` color and takes precedence
+ * over those defaults. ANSI and named slots remain theme-owned; unspecified
+ * entries outside 16..255 stay opaque black.
  */
 export function buildPaletteBuffer(overrides: Map<number, string>): Float32Array {
   const buffer = new Float32Array(PALETTE_ENTRIES * 4);
 
   for (let index = 0; index < PALETTE_ENTRIES; index += 1) {
     buffer[index * 4 + 3] = 1;
+  }
+
+  // 16..231: a 6×6×6 RGB cube, with blue varying fastest.
+  const levels = [0, 95, 135, 175, 215, 255];
+  for (let index = 16; index < 232; index += 1) {
+    const cube = index - 16;
+    buffer[index * 4] = levels[Math.floor(cube / 36)] / 255;
+    buffer[index * 4 + 1] = levels[Math.floor(cube / 6) % 6] / 255;
+    buffer[index * 4 + 2] = levels[cube % 6] / 255;
+  }
+
+  // 232..255: 24 grays, from 8 through 238 in steps of 10.
+  for (let index = 232; index < 256; index += 1) {
+    const gray = (8 + (index - 232) * 10) / 255;
+    buffer[index * 4] = gray;
+    buffer[index * 4 + 1] = gray;
+    buffer[index * 4 + 2] = gray;
   }
 
   for (const [index, color] of overrides) {
