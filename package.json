@@ -1,6 +1,6 @@
 {
   "name": "celeritty",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "packageManager": "pnpm@10.30.1",
   "description": "Terminal emulator for the web. ANSI parsing in Rust (alacritty_terminal) compiled to WebAssembly, rendered with WebGPU.",
   "keywords": [
