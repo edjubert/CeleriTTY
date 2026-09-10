@@ -71,8 +71,9 @@ impl TerminalCore {
     /// Feed a chunk of PTY output. The parser keeps its state across calls, so
     /// an escape sequence split across two reads is handled correctly.
     pub fn feed(&mut self, bytes: &[u8]) {
+        // The grid anchors a scrolled viewport as history grows. Only explicit
+        // user input or reset_scroll should return it to the live screen.
         self.parser.advance(&mut self.term, bytes);
-        self.reset_scroll();
     }
 
     /// Drain terminal protocol replies generated while parsing PTY output.
@@ -182,7 +183,8 @@ impl TerminalCore {
         });
     }
 
-    /// Text between two grid points, inclusive. `start` must not be after
+    /// Text between two viewport points, inclusive. Rows are zero-based, just
+    /// like row_text; viewport-to-grid conversion belongs in the engine. `start` must not be after
     /// `end` (compare line first, then column) — alacritty_terminal's
     /// `bounds_to_string` iterates `start.line..=end.line` and silently
     /// returns an empty string if that range is empty, so a caller that
@@ -197,8 +199,9 @@ impl TerminalCore {
         end_line: i32,
         end_col: usize,
     ) -> String {
-        let start = Point::new(Line(start_line), Column(start_col));
-        let end = Point::new(Line(end_line), Column(end_col));
+        let offset = self.display_offset();
+        let start = Point::new(Line(start_line) - offset, Column(start_col));
+        let end = Point::new(Line(end_line) - offset, Column(end_col));
         self.term.bounds_to_string(start, end)
     }
 
@@ -209,7 +212,7 @@ impl TerminalCore {
             return String::new();
         }
         let grid = self.term.grid();
-        let line = Line(line as i32);
+        let line = Line(line as i32) - grid.display_offset();
         let mut text = String::with_capacity(self.columns());
         for column in 0..self.columns() {
             text.push(grid[Point::new(line, Column(column))].c);
@@ -233,7 +236,8 @@ impl TerminalCore {
         let mut index = 0;
         for line in 0..lines {
             for column in 0..columns {
-                let cell = &grid[Point::new(Line(line as i32), Column(column))];
+                let cell =
+                    &grid[Point::new(Line(line as i32) - grid.display_offset(), Column(column))];
                 self.packed[index] = cell.c as u32;
                 self.packed[index + 1] = encode_color(cell.fg);
                 self.packed[index + 2] = encode_color(cell.bg);
@@ -247,7 +251,7 @@ impl TerminalCore {
         // call, no second pipeline. Toggled, not set: on a cell already inverse
         // from SGR 7, setting the flag is a no-op and the cursor vanishes.
         if show_cursor {
-            let line = usize::try_from(cursor.line.0).unwrap_or(0);
+            let line = usize::try_from(cursor.line.0).unwrap_or(0) + grid.display_offset();
             let column = cursor.column.0;
             if line < lines && column < columns {
                 let flags = (line * columns + column) * WORDS_PER_CELL + 3;
@@ -677,7 +681,7 @@ mod tests {
     }
 
     #[test]
-    fn new_output_snaps_the_view_back_to_the_bottom() {
+    fn new_output_preserves_the_scrolled_view() {
         let mut core = TerminalCore::new(TerminalSize {
             columns: 4,
             screen_lines: 1,
@@ -687,7 +691,7 @@ mod tests {
         assert_eq!(core.display_offset(), 2);
 
         core.feed(b"four\r\n");
-        assert_eq!(core.display_offset(), 0);
+        assert_eq!(core.display_offset(), 3);
     }
 
     #[test]

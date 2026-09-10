@@ -92,7 +92,7 @@ export function resolveLinkUrl(
   engine: InstanceType<typeof EngineTerminal>,
   cell: CellPoint,
 ): string | null {
-  const row = engine.rowText(cell.line - engine.displayOffset);
+  const row = engine.rowText(cell.line);
   return findLinkAtColumn(row, cell.column)?.url ?? null;
 }
 
