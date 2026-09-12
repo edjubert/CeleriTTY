@@ -175,3 +175,33 @@ describe("terminal protocol replies", () => {
     expect(write).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("synchronized query policies", () => {
+  it("finishes deferred replay queries silently before switching to live output", () => {
+    const output: string[] = [];
+    terminal.on("data", (bytes) => output.push(decode(bytes)));
+    terminal.feed(encode("\x1b[?2026hHISTORY\x1b[6n"), { replyToQueries: false });
+    terminal.feed(encode("LIVE\x1b[5n"));
+    expect(output).toEqual(["\x1b[0n"]);
+  });
+
+  it("does not discard deferred live replies at a transition to local output", () => {
+    const output: string[] = [];
+    terminal.on("data", (bytes) => output.push(decode(bytes)));
+    terminal.feed(encode("\x1b[?2026hLIVE\x1b[6n"));
+    terminal.write("LOCAL\x1b[5n");
+    expect(output).toEqual(["\x1b[1;5R"]);
+  });
+});
+
+it("keeps the newest reply policy when a deferred reply listener reenters feed", () => {
+  const output: string[] = [];
+  terminal.on("data", (bytes) => {
+    output.push(decode(bytes));
+    if (output.length === 1) terminal.feed(encode("\x1b[?2026hNESTED\x1b[5n"));
+  });
+  terminal.feed(encode("\x1b[?2026hLIVE\x1b[6n"));
+  terminal.write("LOCAL\x1b[5n");
+  terminal.feed(encode("\x1b[?2026l"));
+  expect(output).toEqual(["\x1b[1;5R", "\x1b[0n"]);
+});

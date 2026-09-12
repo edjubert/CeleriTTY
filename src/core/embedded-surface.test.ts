@@ -31,6 +31,9 @@ vi.mock("./wasm", () => ({
       mocks.engines.push(this);
     }
     setScrollbackLines(): void {}
+    flushSync(): boolean {
+      return false;
+    }
     refreshSnapshot(): void {}
     snapshotPtr(): number {
       return 0;
