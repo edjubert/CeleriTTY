@@ -4,7 +4,9 @@ use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
-use vte::ansi::Processor;
+use vte::ansi::{Processor, Timeout};
+
+use crate::sync_timeout::SyncTimeout;
 
 use crate::pty_output::PtyOutput;
 use crate::snapshot::{encode_color, WORDS_PER_CELL};
@@ -46,7 +48,7 @@ impl Dimensions for TerminalSize {
 pub struct TerminalCore {
     term: Term<PtyOutput>,
     pty_output: PtyOutput,
-    parser: Processor,
+    parser: Processor<SyncTimeout>,
     /// Reused across frames: rewritten in place by `refresh_snapshot` so no
     /// allocation happens on the render path.
     packed: Vec<u32>,
@@ -73,7 +75,21 @@ impl TerminalCore {
     pub fn feed(&mut self, bytes: &[u8]) {
         // The grid anchors a scrolled viewport as history grows. Only explicit
         // user input or reset_scroll should return it to the live screen.
+        self.flush_sync(false);
         self.parser.advance(&mut self.term, bytes);
+    }
+
+    /// Apply an expired synchronized update, including when no new PTY data
+    /// arrives. The browser calls this before each frame. Force completion at
+    /// explicit replay/live boundaries so deferred replies keep their policy.
+    pub fn flush_sync(&mut self, force: bool) -> bool {
+        let timer = self.parser.sync_timeout();
+        if timer.pending_timeout() && (force || timer.expired()) {
+            self.parser.stop_sync(&mut self.term);
+            true
+        } else {
+            false
+        }
     }
 
     /// Drain terminal protocol replies generated while parsing PTY output.
