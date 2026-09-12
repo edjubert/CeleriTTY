@@ -23,15 +23,36 @@ export function applySelectionHighlight(
   end: CellPoint | null,
 ): void {
   if (start === null || end === null) return;
+  const lines = Math.floor(packed.length / WORDS_PER_CELL / columns);
+  if (
+    !Number.isFinite(columns) ||
+    columns < 1 ||
+    !Number.isFinite(lines) ||
+    lines < 1 ||
+    !Number.isFinite(start.line) ||
+    !Number.isFinite(start.column) ||
+    !Number.isFinite(end.line) ||
+    !Number.isFinite(end.column)
+  )
+    return;
 
-  const [top, bottom] =
-    start.line < end.line || (start.line === end.line && start.column <= end.column)
-      ? [start, end]
-      : [end, start];
+  // Scalars only: defensive bounds must not allocate on the render path.
+  let topLine = Math.max(0, Math.min(lines - 1, Math.floor(start.line)));
+  let topColumn = Math.max(0, Math.min(columns - 1, Math.floor(start.column)));
+  let bottomLine = Math.max(0, Math.min(lines - 1, Math.floor(end.line)));
+  let bottomColumn = Math.max(0, Math.min(columns - 1, Math.floor(end.column)));
+  if (topLine > bottomLine || (topLine === bottomLine && topColumn > bottomColumn)) {
+    const line = topLine;
+    const column = topColumn;
+    topLine = bottomLine;
+    topColumn = bottomColumn;
+    bottomLine = line;
+    bottomColumn = column;
+  }
 
-  for (let line = top.line; line <= bottom.line; line++) {
-    const fromColumn = line === top.line ? top.column : 0;
-    const toColumn = line === bottom.line ? bottom.column : columns - 1;
+  for (let line = topLine; line <= bottomLine; line++) {
+    const fromColumn = line === topLine ? topColumn : 0;
+    const toColumn = line === bottomLine ? bottomColumn : columns - 1;
     for (let column = fromColumn; column <= toColumn; column++) {
       const flagsIndex = (line * columns + column) * WORDS_PER_CELL + 3;
       packed[flagsIndex] |= FLAG_INVERSE;

@@ -34,6 +34,7 @@ import {
   MOUSE_SCROLL_UP,
   toEncoderButton,
 } from "./pointer";
+import { clampCellPoint } from "./selection-bounds";
 import { applySelectionHighlight } from "./selection-highlight";
 import { createNativeTextInput, isCompositionKey } from "./text-input";
 import type { NativeTextInput } from "./text-input";
@@ -432,6 +433,8 @@ export class Terminal {
     }
     engine.resize(changed.columns, changed.lines);
     this.#grid = changed;
+    this.#selectionStart = clampCellPoint(this.#selectionStart, changed);
+    this.#selectionEnd = clampCellPoint(this.#selectionEnd, changed);
     this.#dirty = true;
     this.#emit("resize", changed);
   }
@@ -489,7 +492,8 @@ export class Terminal {
       engine,
       emit: (event, payload) => this.#emit(event as TerminalEvent, payload as never),
       clearSelection: () => this.#clearSelection(),
-      cellAt: (event) => (atlas ? computeCellPoint(atlas, this.#surfaceBounds, event) : null),
+      cellAt: (event) =>
+        atlas ? computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid) : null,
       sendPointer: (kind, button, event) =>
         engine !== undefined && atlas !== undefined
           ? sendPointerToEngine(
@@ -522,7 +526,7 @@ export class Terminal {
       host: { focus: () => this.focus() },
       linkAt: (event) => {
         if (engine === undefined || atlas === undefined) return null;
-        const cell = computeCellPoint(atlas, this.#surfaceBounds, event);
+        const cell = computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, false);
         if (cell === null) return null;
         return resolveLinkUrl(engine, cell);
       },
@@ -549,14 +553,16 @@ export class Terminal {
         const engine = this.#engine;
         const atlas = this.#atlas;
         if (engine === undefined || atlas === undefined) return null;
-        const cell = computeCellPoint(atlas, this.#surfaceBounds, event);
+        const cell = computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, false);
         if (cell === null) return null;
         return resolveLinkUrl(engine, cell);
       },
       { current: this.#hoveredLink },
     );
     const atlas = this.#atlas;
-    const cell = atlas ? computeCellPoint(atlas, this.#surfaceBounds, event) : null;
+    const cell = atlas
+      ? computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, false)
+      : null;
     const url = cell ? resolveLinkUrl(this.#engine!, cell) : null;
     this.#hoveredLink = url;
   }

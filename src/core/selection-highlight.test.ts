@@ -55,3 +55,11 @@ describe("applySelectionHighlight", () => {
     expect(flagsAt(4) & FLAG_INVERSE).toBe(FLAG_INVERSE);
   });
 });
+
+it("bounds stale or outside anchors before walking a resized snapshot", () => {
+  const packed = emptyGrid(3, 2);
+  applySelectionHighlight(packed, 3, { line: 1e9, column: 1e9 }, { line: -10, column: -10 });
+  for (let cell = 0; cell < 6; cell++) expect(packed[cell * WORDS_PER_CELL + 3]).toBe(FLAG_INVERSE);
+  applySelectionHighlight(packed, 0, { line: 0, column: 0 }, { line: 1, column: 1 });
+  applySelectionHighlight(packed, 3, { line: NaN, column: 0 }, { line: 1, column: 1 });
+});
