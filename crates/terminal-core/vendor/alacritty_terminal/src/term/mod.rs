@@ -671,7 +671,8 @@ impl<T> Term<T> {
                 .contains(Flags::LEADING_WIDE_CHAR_SPACER)
             && include_wrapped_wide
         {
-            text.push(self.grid[line - 1i32][Column(0)].c);
+            // The wide glyph wraps onto the next row, not the preceding one.
+            text.push(self.grid[line + 1i32][Column(0)].c);
         }
 
         text

@@ -30,11 +30,15 @@ copy is used purely as an in-browser ANSI-to-grid engine.
 3. Deleted the `tests/` directory (its fixtures are not shipped in the
    published `.crate`).
 
-Nothing else is modified. `Term`, `Grid`, scrollback, cell attributes, and the
-alternate screen are untouched and behave exactly as upstream.
+4. `src/term/mod.rs` — in `line_to_string`, a leading wide-character spacer
+   reads the wrapped glyph from `line + 1`, not `line - 1`. The old direction
+   read unrelated text, or panicked when selecting the topmost grid row with
+   no history. Covered by native and real-WASM browser selection regressions.
+
+The remaining terminal/grid behavior is unchanged.
 
 ### Upgrading
 
-Re-download the new version, delete `tests/`, and re-apply the two edits above.
+Re-download the new version, delete `tests/`, and re-apply the edits above.
 If upstream ever gates those modules behind a feature, drop this vendor and
 depend on crates.io directly.

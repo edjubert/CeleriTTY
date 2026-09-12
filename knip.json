@@ -7,7 +7,9 @@
     "harness/main.ts",
     "vite.config.ts",
     "vite.harness.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "harness/browser/main.ts",
+    "playwright.config.ts"
   ],
   "project": ["src/**/*.ts", "harness/**/*.ts"],
   "ignore": ["src/wasm/**"],

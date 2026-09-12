@@ -294,10 +294,18 @@ pnpm install
 pnpm build      # wasm module, bundled ES output, type declarations
 pnpm test       # cargo test --workspace, then vitest
 pnpm harness    # http://localhost:8123
+pnpm exec playwright install chromium
+pnpm test:browser # rebuild, then real bundled WASM/WebGPU regressions
 ```
 
 Requires Rust 1.85 with the `wasm32-unknown-unknown` target, `wasm-pack`, and
 Node 22.18.
+
+Browser regressions require a WebGPU-capable Chromium and exercise the built
+`dist/index.js` with the real WASM and renderer, without a Cadencr server.
+Run `pnpm test:browser --headed` for visually inspectable GPU captures (some
+headless GPU backends capture blank canvases). Results and screenshots are
+kept in `test-results/`.
 
 | Path | Contents |
 |---|---|

@@ -7,6 +7,8 @@
  * tested in isolation.
  */
 
+import { clampCellPoint } from "./selection-bounds";
+import type { GridSize } from "../renderer/grid-metrics";
 import type { CellPoint } from "./types";
 import { pointerTarget } from "./pointer";
 import { findLinkAtColumn } from "./link-detection";
@@ -78,13 +80,23 @@ export function computeCellPoint(
   atlas: { cell: { width: number; height: number } },
   hostBounds: () => DOMRect,
   event: MouseEvent,
+  grid: GridSize,
+  clamp = true,
 ): CellPoint | null {
   const bounds = hostBounds();
   const dpr = window.devicePixelRatio;
-  return {
-    column: Math.max(0, Math.floor(((event.clientX - bounds.left) * dpr) / atlas.cell.width)),
-    line: Math.max(0, Math.floor(((event.clientY - bounds.top) * dpr) / atlas.cell.height)),
+  const point = {
+    column: Math.floor(((event.clientX - bounds.left) * dpr) / atlas.cell.width),
+    line: Math.floor(((event.clientY - bounds.top) * dpr) / atlas.cell.height),
   };
+  // Selection drags extend to the nearest edge. Link hit testing must not
+  // activate the last cell's link from outside the grid.
+  if (
+    !clamp &&
+    (point.column < 0 || point.line < 0 || point.column >= grid.columns || point.line >= grid.lines)
+  )
+    return null;
+  return clampCellPoint(point, grid);
 }
 
 /** Get the URL under a pointer position, or `null`. */
