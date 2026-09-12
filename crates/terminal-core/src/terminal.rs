@@ -183,15 +183,10 @@ impl TerminalCore {
         });
     }
 
-    /// Text between two viewport points, inclusive. Rows are zero-based, just
-    /// like row_text; viewport-to-grid conversion belongs in the engine. `start` must not be after
-    /// `end` (compare line first, then column) — alacritty_terminal's
-    /// `bounds_to_string` iterates `start.line..=end.line` and silently
-    /// returns an empty string if that range is empty, so a caller that
-    /// passes corners in the wrong order gets nothing back, not a panic or
-    /// an error. Normalize the two corners (top-left, bottom-right) before
-    /// calling this — typically in the mouse-drag code building the
-    /// selection, since a drag can go in any of four directions.
+    /// Text between two viewport points, inclusive. Clamp both endpoints to
+    /// the current viewport before converting to scrollback grid coordinates,
+    /// then normalize their order. Public WASM callers and stale drag anchors
+    /// after a resize must never reach bounds_to_string with invalid indices.
     pub fn selected_text(
         &self,
         start_line: i32,
@@ -200,9 +195,15 @@ impl TerminalCore {
         end_col: usize,
     ) -> String {
         let offset = self.display_offset();
-        let start = Point::new(Line(start_line) - offset, Column(start_col));
-        let end = Point::new(Line(end_line) - offset, Column(end_col));
-        self.term.bounds_to_string(start, end)
+        let point = |line: i32, col: usize| {
+            Point::new(
+                Line(line.clamp(0, self.screen_lines() as i32 - 1)) - offset,
+                Column(col.min(self.columns() - 1)),
+            )
+        };
+        let start = point(start_line, start_col);
+        let end = point(end_line, end_col);
+        self.term.bounds_to_string(start.min(end), start.max(end))
     }
 
     /// One viewport row as text, trailing blanks trimmed. Reading aid for
@@ -729,13 +730,13 @@ mod tests {
     }
 
     #[test]
-    fn selected_text_is_empty_when_corners_are_reversed() {
+    fn selected_text_normalizes_reversed_corners() {
         let mut core = TerminalCore::new(TerminalSize {
             columns: 10,
             screen_lines: 2,
         });
         core.feed(b"hello");
-        assert_eq!(core.selected_text(0, 4, 0, 0), "");
+        assert_eq!(core.selected_text(0, 4, 0, 0), "hello");
     }
 
     #[test]
