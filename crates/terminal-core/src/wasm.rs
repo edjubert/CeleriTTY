@@ -52,6 +52,13 @@ impl Terminal {
         self.core.feed(bytes);
     }
 
+    /// Poll the synchronized-output deadline, or finish at a replay boundary.
+    /// Returns whether buffered output was applied; drain takeOutput afterwards.
+    #[wasm_bindgen(js_name = flushSync)]
+    pub fn flush_sync(&mut self, force: bool) -> bool {
+        self.core.flush_sync(force)
+    }
+
     /// Drain protocol replies (for example cursor-position reports) to the PTY.
     #[wasm_bindgen(js_name = takeOutput)]
     pub fn take_output(&mut self) -> Vec<u8> {

@@ -294,10 +294,18 @@ pnpm install
 pnpm build      # wasm module, bundled ES output, type declarations
 pnpm test       # cargo test --workspace, then vitest
 pnpm harness    # http://localhost:8123
+pnpm exec playwright install chromium
+pnpm test:browser # rebuild, then real bundled WASM/WebGPU regressions
 ```
 
 Requires Rust 1.85 with the `wasm32-unknown-unknown` target, `wasm-pack`, and
 Node 22.18.
+
+Browser regressions require a WebGPU-capable Chromium and exercise the built
+`dist/index.js` with the real WASM and renderer, without a Cadencr server.
+Run `pnpm test:browser --headed` for visually inspectable GPU captures (some
+headless GPU backends capture blank canvases). Results and screenshots are
+kept in `test-results/`.
 
 | Path | Contents |
 |---|---|
@@ -340,3 +348,28 @@ cursor-position query is answered and a reply for historical content reaches
 the live shell. Byte-capped replay buffers must therefore end at a sequence
 boundary; suppressing the first live chunk instead could discard legitimate
 live queries.
+
+### Synchronized output
+
+`CSI ?2026h` buffers output until `CSI ?2026l`, a repeated begin renews the
+150 ms deadline, and VTE retains its bounded-buffer overflow behavior.
+WASM uses monotonic `performance.now()` instead of Rust's unsupported
+`std::time::Instant`. The animation loop polls expiration even on clean frames,
+so missing end markers cannot freeze output indefinitely. Background tabs
+flush on the next animation frame or feed after their deadline.
+
+Changing `replyToQueries` explicitly completes the previous synchronized batch
+under its original reply policy before processing the new chunk. This keeps
+replayed queries silent, including on timeout, without disabling live terminal
+capability negotiation or responses. The escape-sequence boundary requirement
+above still applies.
+
+### Neovim PTY regression
+
+The synchronized-output browser suite also exercises an actual Neovim session
+through a PTY: start, insert, edit, save, quit, and execute a shell command.
+This test requires Python 3, a POSIX host, and Neovim 0.11+ on `PATH`.
+It starts an isolated shell and saves only in a new temporary directory;
+`test-results/` contains PTY transcripts and the saved-file result.
+Use `pnpm exec playwright test synchronized-output` after building for the
+browser-only synchronized-output cases without the Neovim fixture.

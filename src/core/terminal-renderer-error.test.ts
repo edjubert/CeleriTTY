@@ -18,6 +18,9 @@ vi.mock("./wasm", () => ({
     readonly alternateScroll = false;
     readonly altScreen = false;
     setScrollbackLines(): void {}
+    flushSync(): boolean {
+      return false;
+    }
     refreshSnapshot(): void {}
     snapshotPtr(): number {
       return 0;

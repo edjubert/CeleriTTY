@@ -62,6 +62,7 @@ export class Terminal {
   #textInput: NativeTextInput | undefined;
   #frame = 0;
   #dirty = true;
+  #replyToQueries = true;
   #grid: GridSize = { columns: 1, lines: 1 };
   #disposed = false;
   #transport: TerminalTransport | undefined;
@@ -228,12 +229,25 @@ export class Terminal {
 
   /** Feed live PTY output. Disable replies explicitly for replayed history. */
   feed(bytes: Uint8Array, options: TerminalOutputOptions = {}): void {
+    this.#assertLive("feed");
+    const replyToQueries = options.replyToQueries !== false;
+    // VTE may still hold queries from previous chunks. Complete that batch
+    // under its original policy before switching between replay and live data.
+    const deferred = replyToQueries !== this.#replyToQueries ? this.#flushSync(true) : undefined;
+    this.#replyToQueries = replyToQueries;
     const engine = this.#requireEngine("feed");
     engine.feed(bytes);
     this.#dirty = true;
     // Drain before emitting: a data listener may synchronously feed more output.
-    const replies = engine.takeOutput();
-    if (options.replyToQueries !== false && replies.length > 0) this.#emit("data", replies);
+    const output = engine.takeOutput();
+    const replies = replyToQueries ? output : new Uint8Array();
+    // Finish all parser/policy changes before user callbacks can reenter feed.
+    if (deferred !== undefined && deferred.length > 0) {
+      const combined = new Uint8Array(deferred.length + replies.length);
+      combined.set(deferred);
+      combined.set(replies, deferred.length);
+      this.#emit("data", combined);
+    } else if (replies.length > 0) this.#emit("data", replies);
   }
 
   /**
@@ -375,19 +389,38 @@ export class Terminal {
 
   // --------------------------------------------------------------- internals
 
+  #flushSync(force: boolean): Uint8Array | undefined {
+    const engine = this.#engine;
+    if (engine === undefined || !engine.flushSync(force)) return;
+    this.#dirty = true;
+    const replies = engine.takeOutput();
+    return this.#replyToQueries ? replies : undefined;
+  }
+
   #draw(): void {
     this.#frame = 0;
     if (this.#disposed) return;
 
     const engine = this.#engine;
     const renderer = this.#renderer;
-    if (engine !== undefined && renderer !== undefined && this.#dirty) {
+    if (engine !== undefined && renderer !== undefined) {
       try {
-        engine.refreshSnapshot();
-        const packed = new Uint32Array(engineMemory(), engine.snapshotPtr(), engine.snapshotLen());
-        applySelectionHighlight(packed, engine.columns, this.#selectionStart, this.#selectionEnd);
-        renderer.render({ columns: engine.columns, lines: engine.screenLines, packed });
-        this.#dirty = false;
+        // Poll even when the last frame was clean: a missing ESU must not
+        // leave buffered output frozen forever without another feed call.
+        const replies = this.#flushSync(false);
+        if (replies !== undefined && replies.length > 0) this.#emit("data", replies);
+        if (this.#disposed) return;
+        if (this.#dirty) {
+          engine.refreshSnapshot();
+          const packed = new Uint32Array(
+            engineMemory(),
+            engine.snapshotPtr(),
+            engine.snapshotLen(),
+          );
+          applySelectionHighlight(packed, engine.columns, this.#selectionStart, this.#selectionEnd);
+          renderer.render({ columns: engine.columns, lines: engine.screenLines, packed });
+          this.#dirty = false;
+        }
       } catch (error) {
         // A single failed frame does not imply device loss. Keep the engine
         // and its history alive; asynchronous renderer fatality is separate.
