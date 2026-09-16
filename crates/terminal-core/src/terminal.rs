@@ -80,7 +80,7 @@ impl TerminalCore {
     }
 
     /// Apply an expired synchronized update, including when no new PTY data
-    /// arrives. The browser calls this before each frame. Force completion at
+    /// arrives. The browser polls only while a batch is pending. Force completion at
     /// explicit replay/live boundaries so deferred replies keep their policy.
     pub fn flush_sync(&mut self, force: bool) -> bool {
         let timer = self.parser.sync_timeout();
@@ -90,6 +90,11 @@ impl TerminalCore {
         } else {
             false
         }
+    }
+
+    /// Whether VTE holds a synchronized batch (including an expired one).
+    pub fn sync_pending(&self) -> bool {
+        self.parser.sync_timeout().pending_timeout()
     }
 
     /// Drain terminal protocol replies generated while parsing PTY output.

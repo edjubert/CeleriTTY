@@ -356,7 +356,7 @@ live queries.
 `CSI ?2026h` buffers output until `CSI ?2026l`, a repeated begin renews the
 150 ms deadline, and VTE retains its bounded-buffer overflow behavior.
 WASM uses monotonic `performance.now()` instead of Rust's unsupported
-`std::time::Instant`. The animation loop polls expiration even on clean frames,
+`std::time::Instant`. The animation loop polls expiration only while a batch is open, including clean frames,
 so missing end markers cannot freeze output indefinitely. Background tabs
 flush on the next animation frame or feed after their deadline.
 
@@ -368,10 +368,19 @@ above still applies.
 
 ### Neovim PTY regression
 
-The synchronized-output browser suite also exercises an actual Neovim session
-through a PTY: start, insert, edit, save, quit, and execute a shell command.
-This test requires Python 3, a POSIX host, and Neovim 0.11+ on `PATH`.
+The optional integration suite exercises an actual Neovim session through a
+PTY: start, insert, edit, save, quit, and execute a shell command.
+Run `pnpm test:neovim` separately from `pnpm test:browser`.
+It requires Python >=3.8, a POSIX host, and Neovim >=0.11 on `PATH`;
+the spec checks these requirements before starting the fixture.
 It starts an isolated shell and saves only in a new temporary directory;
 `test-results/` contains PTY transcripts and the saved-file result.
-Use `pnpm exec playwright test synchronized-output` after building for the
-browser-only synchronized-output cases without the Neovim fixture.
+The default browser CI job needs none of these host integration dependencies.
+
+### Internal WASM plumbing
+
+`syncPending` and `flushSync(force)` are low-level WASM methods used internally
+by the `Terminal` facade. They are not exported from the package entry points
+and are not additions to its supported public API. `EngineTerminal` is an
+internal module export, not a root package export; deep imports are unsupported.
+Hosts use `Terminal.feed()` and do not need to manage synchronization timers.

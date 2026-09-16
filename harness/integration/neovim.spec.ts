@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,19 @@ test("real Neovim PTY: negotiate sync, insert, edit, save, quit, usable shell", 
   page,
 }, info) => {
   test.setTimeout(45000);
+  // Fail explicitly rather than silently skipping the optional integration.
+  expect(process.platform, "Neovim PTY integration requires POSIX").not.toBe("win32");
+  expect(
+    spawnSync("python3", ["-c", "import sys; assert sys.version_info >= (3, 8)"]).status,
+    "Install Python >=3.8 on PATH",
+  ).toBe(0);
+  const nvim = spawnSync("nvim", ["--version"], { encoding: "utf8" });
+  expect(nvim.status, "Install Neovim >=0.11 on PATH").toBe(0);
+  const version = /NVIM v(\d+)\.(\d+)/.exec(nvim.stdout);
+  expect(
+    version !== null && (Number(version[1]) > 0 || Number(version[2]) >= 11),
+    "Synchronized-output integration requires Neovim >=0.11",
+  ).toBe(true);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/browser.html");
@@ -23,7 +36,7 @@ test("real Neovim PTY: negotiate sync, insert, edit, save, quit, usable shell", 
   const file = join(directory, "saved.txt");
   const bridge = spawn(
     "python3",
-    ["harness/browser/pty_bridge.py", directory, String(grid.columns), String(grid.lines)],
+    ["harness/integration/pty_bridge.py", directory, String(grid.columns), String(grid.lines)],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
   const output: Buffer[] = [];

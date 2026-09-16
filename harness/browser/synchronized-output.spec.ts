@@ -128,3 +128,24 @@ test("real WASM sync survives every byte boundary and renews its deadline", asyn
     final: "ABCD",
   });
 });
+
+test("timeout host exceptions escape without a terminal error and frames recover", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/browser.html");
+  await page.waitForFunction(() => window.qa?.state().frames > 0);
+  await page.evaluate(() => {
+    const off = window.qa.terminal.on("data", () => {
+      off();
+      throw new Error("expected host callback failure");
+    });
+    window.qa.feed("\x1b[?2026hTIMEOUT\x1b[6n");
+  });
+  await expect.poll(() => errors).toEqual(["expected host callback failure"]);
+  expect(await page.evaluate(() => window.qa.errors)).toEqual([]);
+  await expect.poll(() => page.evaluate(() => window.qa.state().rows[0])).toBe("TIMEOUT");
+  await page.evaluate(() => window.qa.feed("_ALIVE"));
+  await expect.poll(() => page.evaluate(() => window.qa.state().rows[0])).toBe("TIMEOUT_ALIVE");
+});

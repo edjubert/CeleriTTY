@@ -10,13 +10,16 @@ fn terminal() -> TerminalCore {
 #[test]
 fn begin_end_and_repeated_begins_buffer_until_commit() {
     let mut core = terminal();
+    assert!(!core.sync_pending());
     core.feed(b"before\x1b[?2026h");
+    assert!(core.sync_pending());
     core.feed(b"FIRST\x1b[?2026hSECOND");
     assert_eq!(core.row_text(0), "before");
     assert!(!core.flush_sync(false));
     core.feed(b"\x1b[?2026l");
     assert_eq!(core.row_text(0), "beforeFIRSTSECOND");
     assert!(!core.flush_sync(true));
+    assert!(!core.sync_pending());
     core.feed(b"\x1b[?2026lAFTER");
     assert_eq!(core.row_text(0), "beforeFIRSTSECONDAFTER");
 }
@@ -45,8 +48,10 @@ fn timeout_flushes_without_new_bytes_and_render_and_replies_resume() {
     core.feed(b"\x1b[?2026hTIMEOUT\x1b[6n");
     assert_eq!(core.row_text(0), "");
     assert!(core.take_output().is_empty());
-    std::thread::sleep(std::time::Duration::from_millis(180));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(core.sync_pending());
     assert!(core.flush_sync(false));
+    assert!(!core.sync_pending());
     assert_eq!(core.row_text(0), "TIMEOUT");
     assert_eq!(core.take_output(), b"\x1b[1;8R");
     assert!(!core.flush_sync(false));
@@ -63,7 +68,7 @@ fn expired_data_precedes_new_feed_and_resize_remains_safe() {
         columns: 10,
         screen_lines: 2,
     });
-    std::thread::sleep(std::time::Duration::from_millis(180));
+    std::thread::sleep(std::time::Duration::from_millis(300));
     core.feed(b"NEW");
     assert_eq!(core.row_text(0), "OLDNEW");
 }

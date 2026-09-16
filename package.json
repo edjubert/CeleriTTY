@@ -50,7 +50,8 @@
     "ts-check": "tsc --noEmit",
     "knip": "knip",
     "harness": "pnpm build:wasm && vite --config vite.harness.config.ts",
-    "test:browser": "pnpm build && playwright test"
+    "test:browser": "pnpm build && playwright test",
+    "test:neovim": "pnpm build && playwright test --config playwright.neovim.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",

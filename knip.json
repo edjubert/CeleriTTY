@@ -9,10 +9,11 @@
     "vite.harness.config.ts",
     "vitest.config.ts",
     "harness/browser/main.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "playwright.neovim.config.ts"
   ],
   "project": ["src/**/*.ts", "harness/**/*.ts"],
   "ignore": ["src/wasm/**"],
-  "ignoreBinaries": ["wasm-pack"],
+  "ignoreBinaries": ["wasm-pack", "nvim"],
   "ignoreDependencies": ["@webgpu/types"]
 }

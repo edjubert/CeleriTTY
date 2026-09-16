@@ -63,6 +63,7 @@ export class Terminal {
   #frame = 0;
   #dirty = true;
   #replyToQueries = true;
+  #syncPending = false;
   #grid: GridSize = { columns: 1, lines: 1 };
   #disposed = false;
   #transport: TerminalTransport | undefined;
@@ -237,6 +238,7 @@ export class Terminal {
     this.#replyToQueries = replyToQueries;
     const engine = this.#requireEngine("feed");
     engine.feed(bytes);
+    this.#syncPending = engine.syncPending;
     this.#dirty = true;
     // Drain before emitting: a data listener may synchronously feed more output.
     const output = engine.takeOutput();
@@ -391,7 +393,8 @@ export class Terminal {
 
   #flushSync(force: boolean): Uint8Array | undefined {
     const engine = this.#engine;
-    if (engine === undefined || !engine.flushSync(force)) return;
+    if (!this.#syncPending || engine === undefined || !engine.flushSync(force)) return;
+    this.#syncPending = engine.syncPending;
     this.#dirty = true;
     const replies = engine.takeOutput();
     return this.#replyToQueries ? replies : undefined;
@@ -401,16 +404,14 @@ export class Terminal {
     this.#frame = 0;
     if (this.#disposed) return;
 
-    const engine = this.#engine;
-    const renderer = this.#renderer;
-    if (engine !== undefined && renderer !== undefined) {
-      try {
-        // Poll even when the last frame was clean: a missing ESU must not
-        // leave buffered output frozen forever without another feed call.
-        const replies = this.#flushSync(false);
-        if (replies !== undefined && replies.length > 0) this.#emit("data", replies);
-        if (this.#disposed) return;
-        if (this.#dirty) {
+    try {
+      const engine = this.#engine;
+      const renderer = this.#renderer;
+      if (engine === undefined || renderer === undefined) return;
+      // Only feed can open a batch. Idle terminals never poll across WASM.
+      const replies = this.#flushSync(false);
+      if (this.#dirty) {
+        try {
           engine.refreshSnapshot();
           const packed = new Uint32Array(
             engineMemory(),
@@ -420,19 +421,18 @@ export class Terminal {
           applySelectionHighlight(packed, engine.columns, this.#selectionStart, this.#selectionEnd);
           renderer.render({ columns: engine.columns, lines: engine.screenLines, packed });
           this.#dirty = false;
-        }
-      } catch (error) {
-        // A single failed frame does not imply device loss. Keep the engine
-        // and its history alive; asynchronous renderer fatality is separate.
-        try {
+        } catch (error) {
+          // A failed frame is not device loss. Keep the engine and retry.
           this.#emit("error", error instanceof Error ? error : new Error(String(error)));
-        } finally {
-          if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
         }
-        return;
       }
+      // Host callbacks are not renderer failures. Render first, and let a
+      // listener exception escape while the finally block keeps frames alive.
+      if (!this.#disposed && replies !== undefined && replies.length > 0)
+        this.#emit("data", replies);
+    } finally {
+      if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
     }
-    if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
   }
 
   #handleRendererError(error: Error): void {
