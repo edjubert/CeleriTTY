@@ -33,7 +33,9 @@ copy is used purely as an in-browser ANSI-to-grid engine.
 4. `src/term/mod.rs` — in `line_to_string`, a leading wide-character spacer
    reads the wrapped glyph from `line + 1`, not `line - 1`. The old direction
    read unrelated text, or panicked when selecting the topmost grid row with
-   no history. Covered by native and real-WASM browser selection regressions.
+   no history. The neighbour read is guarded: DECSTBM can leave a spacer on
+   the last grid row with no next row to read. Selection then reflects the
+   existing row, without fabricating a wrapped glyph. Covered by native and real-WASM browser selection regressions.
 
 The remaining terminal/grid behavior is unchanged.
 

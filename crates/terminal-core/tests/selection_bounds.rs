@@ -75,3 +75,19 @@ fn wide_character_wrap_at_the_first_row_keeps_selection_in_bounds() {
     assert_eq!(core.selected_text(0, 0, 0, usize::MAX), "abc界");
     assert_eq!(core.selected_text(1, 1, 0, 0), "abc界");
 }
+
+#[test]
+fn leading_wide_spacer_on_bottom_row_with_restricted_scroll_region() {
+    let mut core = TerminalCore::new(TerminalSize {
+        columns: 4,
+        screen_lines: 3,
+    });
+    core.feed("\x1b[1;2r\x1b[3;1Habc界".as_bytes());
+    // At the bottom outside DECSTBM, wrapline overwrites the same row's
+    // first two cells. Selection must reflect that grid, not invent abc界.
+    assert_eq!(core.row_text(2), "界 c");
+    assert_eq!(core.selected_text(2, 0, 2, 3), "界c");
+    core.feed(b"\x1b[r\x1b[HOK");
+    core.refresh_snapshot();
+    assert_eq!(core.selected_text(0, 0, 0, 1), "OK");
+}

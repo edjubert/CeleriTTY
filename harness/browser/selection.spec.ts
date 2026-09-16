@@ -198,3 +198,20 @@ test("selection of a wide-character wrap on the top row stays usable", async ({ 
   });
   expect(selection).toBe("abc界");
 });
+
+test("bottom-row wide spacer outside DECSTBM never reads beyond the grid", async ({ page }) => {
+  await page.goto("/browser.html");
+  await page.waitForFunction(() => !!window.qa);
+  const result = await page.evaluate(() => {
+    const engine = new window.qa.EngineTerminal(4, 3);
+    engine.feed(new TextEncoder().encode("\x1b[1;2r\x1b[3;1Habc界"));
+    const row = engine.rowText(2);
+    const selected = engine.selectedText(2, 0, 2, 3);
+    engine.feed(new TextEncoder().encode("\x1b[r\x1b[HOK"));
+    engine.refreshSnapshot();
+    const alive = engine.selectedText(0, 0, 0, 1);
+    engine.free();
+    return { row, selected, alive };
+  });
+  expect(result).toEqual({ row: "界 c", selected: "界c", alive: "OK" });
+});

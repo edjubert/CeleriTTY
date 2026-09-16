@@ -58,10 +58,10 @@ describe("selection coordinates at fractional and stale surface boundaries", () 
         computeCellPoint(atlas, bounds, { clientX: Infinity, clientY: 20 } as MouseEvent, grid),
       ).toBeNull();
       expect(
-        computeCellPoint(atlas, bounds, { clientX: 1000, clientY: 20 } as MouseEvent, grid, false),
+        computeCellPoint(atlas, bounds, { clientX: 1000, clientY: 20 } as MouseEvent, grid, "link"),
       ).toBeNull();
       expect(
-        computeCellPoint(atlas, bounds, { clientX: 9, clientY: 20 } as MouseEvent, grid, false),
+        computeCellPoint(atlas, bounds, { clientX: 9, clientY: 20 } as MouseEvent, grid, "link"),
       ).toBeNull();
     });
   }

@@ -526,7 +526,7 @@ export class Terminal {
       host: { focus: () => this.focus() },
       linkAt: (event) => {
         if (engine === undefined || atlas === undefined) return null;
-        const cell = computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, false);
+        const cell = computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, "link");
         if (cell === null) return null;
         return resolveLinkUrl(engine, cell);
       },
@@ -553,7 +553,7 @@ export class Terminal {
         const engine = this.#engine;
         const atlas = this.#atlas;
         if (engine === undefined || atlas === undefined) return null;
-        const cell = computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, false);
+        const cell = computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, "link");
         if (cell === null) return null;
         return resolveLinkUrl(engine, cell);
       },
@@ -561,7 +561,7 @@ export class Terminal {
     );
     const atlas = this.#atlas;
     const cell = atlas
-      ? computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, false)
+      ? computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid, "link")
       : null;
     const url = cell ? resolveLinkUrl(this.#engine!, cell) : null;
     this.#hoveredLink = url;

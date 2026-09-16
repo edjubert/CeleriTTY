@@ -81,7 +81,7 @@ export function computeCellPoint(
   hostBounds: () => DOMRect,
   event: MouseEvent,
   grid: GridSize,
-  clamp = true,
+  intent: "selection" | "link" = "selection",
 ): CellPoint | null {
   const bounds = hostBounds();
   const dpr = window.devicePixelRatio;
@@ -92,7 +92,7 @@ export function computeCellPoint(
   // Selection drags extend to the nearest edge. Link hit testing must not
   // activate the last cell's link from outside the grid.
   if (
-    !clamp &&
+    intent === "link" &&
     (point.column < 0 || point.line < 0 || point.column >= grid.columns || point.line >= grid.lines)
   )
     return null;
