@@ -155,9 +155,8 @@ impl Terminal {
         self.core.take_damage().to_vec()
     }
 
-    /// Text between two zero-based viewport points, inclusive. `start` must not be after
-    /// `end` — see `TerminalCore::selected_text`'s doc comment for why a
-    /// reversed range returns an empty string rather than erroring.
+    /// Text between two zero-based viewport points, inclusive. Both endpoints
+    /// are clamped to the current viewport and their order is normalized.
     #[wasm_bindgen(js_name = selectedText)]
     pub fn selected_text(
         &self,

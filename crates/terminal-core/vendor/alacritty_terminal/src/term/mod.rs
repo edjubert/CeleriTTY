@@ -670,8 +670,11 @@ impl<T> Term<T> {
                 .flags
                 .contains(Flags::LEADING_WIDE_CHAR_SPACER)
             && include_wrapped_wide
+            // DECSTBM can leave the spacer on the bottom row without scrolling.
+            && line < self.grid.bottommost_line()
         {
-            text.push(self.grid[line - 1i32][Column(0)].c);
+            // The wide glyph wraps onto the next row, not the preceding one.
+            text.push(self.grid[line + 1i32][Column(0)].c);
         }
 
         text
