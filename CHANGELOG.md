@@ -1,19 +1,49 @@
 # Changelog
 
-## Unreleased — proposed 1.3.0
-
-### Changed
-
-- Selection coordinates are clamped to the viewport before conversion to
-  scrollback coordinates. Reversed corners are normalized and return selected
-  text instead of the empty string returned by the low-level WASM binding in
-  1.2.0. The high-level `Terminal.getSelection()` already normalizes corners.
-  Consumers of the low-level binding that used reversed corners to mean
-  “no selection” must check their selection state explicitly instead.
-- Target a minor release for this intentional selection behavior change;
-  package versions remain unchanged until the maintainer cuts the release.
+## 1.2.1 — 2026-09-17
 
 ### Fixed
 
-- Out-of-grid selections and wide-character wrap selection cannot read a
-  nonexistent neighbouring row, including with a restricted scroll region.
+- Synchronized output (`CSI ?2026h`) no longer panics on WASM. The parser uses a
+  monotonic `performance.now()` deadline instead of `std::time::Instant`, which
+  is unsupported on `wasm32-unknown-unknown`. A missing end marker can no longer
+  freeze rendering: the 150 ms deadline is polled before incoming data and on
+  animation frames while a batch is open.
+  ([#13](https://github.com/edjubert/CeleriTTY/pull/13) by @rle-mino)
+- Selections no longer panic on coordinates outside the grid. Pixel-to-cell
+  conversion is clamped against the allocated grid for both drag endpoints,
+  stale anchors are re-clamped after a resize, and the WASM `selectedText`
+  boundary clamps and normalizes before converting viewport rows to scrollback
+  coordinates.
+  ([#12](https://github.com/edjubert/CeleriTTY/pull/12) by @rle-mino)
+- Selecting a line ending in a wrapped wide character returned text from the
+  wrong row, and panicked on the topmost row with no history. The vendored
+  `alacritty_terminal` patch reads the wrapped glyph from the next row, and
+  guards the read when a restricted scroll region (DECSTBM) leaves the spacer on
+  the bottom row.
+  ([#12](https://github.com/edjubert/CeleriTTY/pull/12) by @rle-mino)
+- Link hit testing no longer activates an edge cell's link from a pointer
+  outside the grid.
+  ([#12](https://github.com/edjubert/CeleriTTY/pull/12) by @rle-mino)
+
+### Changed
+
+- The low-level WASM binding's `selectedText` normalizes reversed corners and
+  returns the selected text instead of the empty string it returned in 1.2.0.
+  That binding is not exported from the package entry points and
+  `Terminal.getSelection()` already normalized corners itself, so the published
+  API is unchanged.
+  ([#12](https://github.com/edjubert/CeleriTTY/pull/12) by @rle-mino)
+
+### Internal
+
+- A `browser` CI job runs the bundled WASM and WebGPU regressions headlessly on
+  every pull request and main push, using Chromium's software WebGPU adapter.
+  An opt-in `pnpm test:neovim` PTY integration suite lives outside the default
+  browser suite.
+  ([#14](https://github.com/edjubert/CeleriTTY/pull/14),
+  [#13](https://github.com/edjubert/CeleriTTY/pull/13) by @rle-mino)
+
+## 1.2.0
+
+See the [v1.2.0 release](https://github.com/edjubert/CeleriTTY/releases/tag/v1.2.0).
