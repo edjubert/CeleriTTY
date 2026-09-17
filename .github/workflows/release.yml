@@ -25,9 +25,11 @@ jobs:
 
       - uses: jetli/wasm-pack-action@v0.4.0
       - uses: pnpm/action-setup@v4
+      # Node 24.21.0 ships npm 11.19.0. Trusted publishing needs 11.5.1 or
+      # later, so the bundled npm is enough and nothing is installed globally.
       - uses: actions/setup-node@v4
         with:
-          node-version: "22.18.0"
+          node-version: "24.21.0"
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
 
@@ -43,6 +45,7 @@ jobs:
 
       # No --access public: that flag only matters for scoped packages, and
       # celeritty is unscoped and therefore public by default.
-      # --no-git-checks is required: pnpm otherwise refuses to publish from
-      # the detached HEAD a tag checkout produces.
-      - run: pnpm publish --no-git-checks
+      # npm rather than pnpm: pnpm has no trusted-publishing support, so it
+      # sends whatever sits in .npmrc and npm answers 404 on the PUT. Leave
+      # NODE_AUTH_TOKEN unset so the OIDC exchange is what authenticates.
+      - run: npm publish
