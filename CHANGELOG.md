@@ -17,6 +17,11 @@
   published by hand. Both CI jobs move to the same Node, so a tag cannot publish
   an artifact built on a runtime the pull requests never exercised.
   ([#15](https://github.com/edjubert/CeleriTTY/pull/15) by @edjubert)
+- Pin the wasm-pack version used by CI and the release job. The action resolves
+  `latest` on every run and handed out 0.9.1, which predates workspace
+  inheritance and cannot parse `license.workspace = true`. Two runs of the same
+  commit disagreed on whether the build worked.
+  ([#16](https://github.com/edjubert/CeleriTTY/pull/16) by @edjubert)
 
 ## 1.2.1 — 2026-09-17
 
