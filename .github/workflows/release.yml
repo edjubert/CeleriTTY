@@ -23,7 +23,12 @@ jobs:
           toolchain: "1.85.0"
           targets: wasm32-unknown-unknown
 
+      # Pinned: the action resolves "latest" per run and has handed out
+      # 0.9.1, which predates workspace inheritance and cannot parse
+      # license.workspace = true in the crate manifests.
       - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: "v0.15.0"
       - uses: pnpm/action-setup@v4
       # Node 24.21.0 ships npm 11.19.0. Trusted publishing needs 11.5.1 or
       # later, so the bundled npm is enough and nothing is installed globally.
