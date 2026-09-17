@@ -350,3 +350,37 @@ cursor-position query is answered and a reply for historical content reaches
 the live shell. Byte-capped replay buffers must therefore end at a sequence
 boundary; suppressing the first live chunk instead could discard legitimate
 live queries.
+
+### Synchronized output
+
+`CSI ?2026h` buffers output until `CSI ?2026l`, a repeated begin renews the
+150 ms deadline, and VTE retains its bounded-buffer overflow behavior.
+WASM uses monotonic `performance.now()` instead of Rust's unsupported
+`std::time::Instant`. The animation loop polls expiration only while a batch is open, including clean frames,
+so missing end markers cannot freeze output indefinitely. Background tabs
+flush on the next animation frame or feed after their deadline.
+
+Changing `replyToQueries` explicitly completes the previous synchronized batch
+under its original reply policy before processing the new chunk. This keeps
+replayed queries silent, including on timeout, without disabling live terminal
+capability negotiation or responses. The escape-sequence boundary requirement
+above still applies.
+
+### Neovim PTY regression
+
+The optional integration suite exercises an actual Neovim session through a
+PTY: start, insert, edit, save, quit, and execute a shell command.
+Run `pnpm test:neovim` separately from `pnpm test:browser`.
+It requires Python >=3.8, a POSIX host, and Neovim >=0.11 on `PATH`;
+the spec checks these requirements before starting the fixture.
+It starts an isolated shell and saves only in a new temporary directory;
+`test-results/` contains PTY transcripts and the saved-file result.
+The default browser CI job needs none of these host integration dependencies.
+
+### Internal WASM plumbing
+
+`syncPending` and `flushSync(force)` are low-level WASM methods used internally
+by the `Terminal` facade. They are not exported from the package entry points
+and are not additions to its supported public API. `EngineTerminal` is an
+internal module export, not a root package export; deep imports are unsupported.
+Hosts use `Terminal.feed()` and do not need to manage synchronization timers.

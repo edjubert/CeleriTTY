@@ -7,6 +7,7 @@
 pub mod input;
 mod pty_output;
 pub mod snapshot;
+mod sync_timeout;
 pub mod terminal;
 pub mod wasm;
 
