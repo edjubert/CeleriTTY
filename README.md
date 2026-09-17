@@ -299,7 +299,7 @@ pnpm test:browser # rebuild, then real bundled WASM/WebGPU regressions
 ```
 
 Requires Rust 1.85 with the `wasm32-unknown-unknown` target, `wasm-pack`, and
-Node 22.18.
+Node 24.21 (Node 22.18 or newer also works).
 
 Browser regressions require a WebGPU-capable Chromium and exercise the built
 `dist/index.js` with the real WASM and renderer, without a backend server.
