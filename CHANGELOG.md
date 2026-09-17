@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.2 — 2026-09-17
+
+### Changed
+
+- Widen the supported Node range from `>=22.18.0 <23.0.0` to `>=22.18.0 <25.0.0`.
+  The previous upper bound rejected Node 23 and 24 outright. Widening rather
+  than moving it keeps every Node 22 consumer working.
+  ([#15](https://github.com/edjubert/CeleriTTY/pull/15) by @edjubert)
+
+### Internal
+
+- The release workflow publishes with `npm publish` on Node 24.21.0 LTS, whose
+  bundled npm 11.19.0 performs the OIDC exchange that npm trusted publishing
+  needs. `pnpm publish` never could, which is why every release up to 1.2.1 was
+  published by hand. Both CI jobs move to the same Node, so a tag cannot publish
+  an artifact built on a runtime the pull requests never exercised.
+  ([#15](https://github.com/edjubert/CeleriTTY/pull/15) by @edjubert)
+
 ## 1.2.1 — 2026-09-17
 
 ### Fixed
