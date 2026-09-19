@@ -52,8 +52,9 @@ export interface TerminalCursor {
 }
 
 /**
- * A fully resolved configuration. The component resolves nothing: whoever
- * constructs this object decided which source won and applied any overrides.
+ * Resolved appearance and history configuration, plus optional browser input
+ * settings. The host decides which configuration source wins and applies
+ * overrides; omitted scrollSensitivity uses the browser default of 1.
  */
 export interface TerminalOptions {
   font: TerminalFont;
@@ -61,6 +62,13 @@ export interface TerminalOptions {
   cursor: TerminalCursor;
   /** Lines of history kept above the live screen. */
   scrollback: number;
+  /**
+   * Local wheel scroll multiplier, default 1. Finite and >= 0; 0 disables
+   * local wheel scrolling. Does not scale application mouse reports or
+   * alternate-screen arrow keys. Pixels use the rendered CSS cell height,
+   * lines map directly, and pages use the number of visible grid rows.
+   */
+  scrollSensitivity?: number;
 }
 
 export interface CellPoint {

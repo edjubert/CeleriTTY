@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Recover glyph-atlas image import failures on software WebGPU adapters by
+  uploading RGBA pixels. Font changes keep rendering, and unchanged atlases
+  require no CPU readback.
+- Local wheel scrolling uses pixel, line and page deltas instead of moving
+  three lines per event. Fractional movement accumulates per terminal; zero
+  and horizontal-only events no longer scroll vertically.
+- Alternate-screen wheel arrows work when mouse reporting is disabled.
+  Explicit mouse reporting takes priority over alternate-scroll arrows;
+  application events never also move local history.
+
+### Added
+
+- Optional `TerminalOptions.scrollSensitivity` (default `1`), also supported by
+  `setOptions`. A finite non-negative multiplier for local wheel scrolling;
+  `0` disables it without suppressing application mouse input. See the README
+  for delta conversion and fractional-state behavior.
+
 ## 1.2.2 — 2026-09-17
 
 ### Changed

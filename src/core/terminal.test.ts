@@ -8,6 +8,8 @@ const wasm = vi.hoisted(() => ({
   flushSync: vi.fn(() => false),
   takeOutput: vi.fn(() => new Uint8Array()),
   pending: false,
+  mouseReporting: 0,
+  routingReads: vi.fn(),
   memory: new ArrayBuffer(80 * 24 * 4 * Uint32Array.BYTES_PER_ELEMENT),
 }));
 
@@ -17,7 +19,11 @@ vi.mock("./wasm", () => ({
     readonly screenLines = 24;
     readonly displayOffset = 0;
     readonly applicationCursor = false;
-    readonly mouseReporting = 0;
+    readonly maxScroll = 100;
+    get mouseReporting(): number {
+      wasm.routingReads();
+      return wasm.mouseReporting;
+    }
     readonly sgrMouse = false;
     readonly alternateScroll = false;
     readonly altScreen = false;
@@ -93,6 +99,8 @@ describe("Terminal lifecycle", () => {
     wasm.flushSync.mockReset().mockReturnValue(false);
     wasm.takeOutput.mockReset().mockReturnValue(new Uint8Array());
     wasm.pending = false;
+    wasm.mouseReporting = 0;
+    wasm.routingReads.mockClear();
     document.body.replaceChildren();
     frames = new Map();
     nextFrame = 1;
@@ -146,6 +154,61 @@ describe("Terminal lifecycle", () => {
     frames.delete(id);
     frame(0);
   }
+
+  it.each([-1, NaN, Infinity, -Infinity, null, "0.5"])(
+    "rejects invalid sensitivity %s before touching the host",
+    (value) => {
+      const host = document.createElement("div");
+      expect(() => new Terminal(host, { ...OPTIONS, scrollSensitivity: value as number })).toThrow(
+        RangeError,
+      );
+      expect(host.children).toHaveLength(0);
+      expect(host.hasAttribute("tabindex")).toBe(false);
+    },
+  );
+
+  it("validates option updates before applying any part of the patch", async () => {
+    const renderer = createRenderer();
+    const terminal = new Terminal(document.createElement("div"), OPTIONS, async () => renderer);
+    await terminal.ready;
+    renderer.setPalette.mockClear();
+    expect(() => terminal.setOptions({ colors: OPTIONS.colors, scrollSensitivity: -1 })).toThrow(
+      RangeError,
+    );
+    expect(renderer.setPalette).not.toHaveBeenCalled();
+    for (const value of [0, 0.5, 1, 2, undefined]) {
+      expect(() => terminal.setOptions({ scrollSensitivity: value })).not.toThrow();
+    }
+    terminal.dispose();
+    expect(() => terminal.setOptions({ scrollSensitivity: 1 })).toThrow("after dispose");
+  });
+
+  it("reads output routing only while a wheel fraction is pending, including sync flushes", async () => {
+    const host = document.createElement("div");
+    const terminal = new Terminal(host, OPTIONS, async () => createRenderer());
+    await terminal.ready;
+    for (let i = 0; i < 10; i++) terminal.feed(new Uint8Array());
+    expect(wasm.routingReads).not.toHaveBeenCalled();
+
+    host.dispatchEvent(new WheelEvent("wheel", { deltaY: -0.5, deltaMode: 1 }));
+    wasm.routingReads.mockClear();
+    terminal.feed(new Uint8Array());
+    expect(wasm.routingReads).toHaveBeenCalledTimes(1);
+    wasm.pending = true;
+    terminal.feed(new Uint8Array());
+    wasm.flushSync.mockImplementationOnce(() => {
+      wasm.pending = false;
+      return true;
+    });
+    runFrame();
+    expect(wasm.routingReads).toHaveBeenCalledTimes(3);
+    wasm.mouseReporting = 1;
+    terminal.feed(new Uint8Array());
+    expect(wasm.routingReads).toHaveBeenCalledTimes(4);
+    for (let i = 0; i < 10; i++) terminal.feed(new Uint8Array());
+    expect(wasm.routingReads).toHaveBeenCalledTimes(4);
+    terminal.dispose();
+  });
 
   it("polls only pending batches and stops after expiry or an explicit end", async () => {
     const terminal = new Terminal(document.createElement("div"), OPTIONS, async () =>
