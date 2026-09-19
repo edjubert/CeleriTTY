@@ -79,3 +79,143 @@ describe("TerminalRenderer lifecycle", () => {
     expect(device.destroy).toHaveBeenCalledOnce();
   });
 });
+
+async function uploadFixture() {
+  const pixels = new Uint8ClampedArray([255, 255, 255, 128]);
+  const read = vi.fn(() => ({ data: pixels }));
+  const source = {
+    width: 1,
+    height: 1,
+    getContext: () => ({ getImageData: read }),
+  } as unknown as OffscreenCanvas;
+  let dirty = true;
+  const markUploaded = vi.fn(() => {
+    dirty = false;
+  });
+  const atlas = {
+    ...ATLAS,
+    source,
+    markUploaded,
+    glyph: () => ({ u0: 0, v0: 0, u1: 1, v1: 1 }),
+    get isDirty() {
+      return dirty;
+    },
+  } satisfies AtlasTexture;
+  const texture = { destroy: vi.fn(), createView: vi.fn() };
+  const queue = {
+    copyExternalImageToTexture: vi.fn(),
+    writeTexture: vi.fn(),
+    writeBuffer: vi.fn(),
+    submit: vi.fn(),
+  };
+  const pass = {
+    setPipeline: vi.fn(),
+    setBindGroup: vi.fn(),
+    setVertexBuffer: vi.fn(),
+    draw: vi.fn(),
+    end: vi.fn(),
+  };
+  const device = {
+    queue,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    lost: new Promise<GPUDeviceLostInfo>(() => {}),
+    createBuffer: () => ({ destroy: vi.fn() }),
+    createRenderPipeline: () => ({ getBindGroupLayout: vi.fn() }),
+    createSampler: vi.fn(),
+    createShaderModule: vi.fn(),
+    createTexture: () => texture,
+    createBindGroup: vi.fn(),
+    createCommandEncoder: () => ({ beginRenderPass: () => pass, finish: vi.fn() }),
+    destroy: vi.fn(),
+  };
+  installGpu(device);
+  vi.stubGlobal("GPUBufferUsage", { UNIFORM: 1, COPY_DST: 2, VERTEX: 4 });
+  vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 1, COPY_DST: 2, RENDER_ATTACHMENT: 4 });
+  const canvas = document.createElement("canvas");
+  vi.spyOn(canvas, "getContext").mockReturnValue({
+    canvas,
+    configure: vi.fn(),
+    unconfigure: vi.fn(),
+    getCurrentTexture: () => texture,
+  } as never);
+  const renderer = await TerminalRenderer.create(canvas, atlas);
+  const render = () =>
+    renderer.render({
+      columns: 1,
+      lines: 1,
+      packed: new Uint32Array([65, (1 << 24) | 256, (1 << 24) | 257, 0]),
+    });
+  return {
+    renderer,
+    render,
+    queue,
+    read,
+    pixels,
+    texture,
+    atlas,
+    markUploaded,
+    dirty: () => {
+      dirty = true;
+    },
+  };
+}
+
+describe("glyph atlas upload", () => {
+  it("keeps the fast image path and never reads back clean frames", async () => {
+    const q = await uploadFixture();
+    q.render();
+    q.render();
+    expect(q.queue.copyExternalImageToTexture).toHaveBeenCalledOnce();
+    expect(q.read).not.toHaveBeenCalled();
+    expect(q.queue.writeTexture).not.toHaveBeenCalled();
+    q.renderer.dispose();
+  });
+
+  it("recovers image import failures with RGBA and remembers the path across atlas replacement", async () => {
+    const q = await uploadFixture();
+    q.queue.copyExternalImageToTexture.mockImplementation(() => {
+      throw new TypeError("Failed to copy content from external image.");
+    });
+    q.render();
+    expect(q.read).toHaveBeenCalledWith(0, 0, 1, 1);
+    expect(q.queue.writeTexture).toHaveBeenCalledWith(
+      { texture: q.texture },
+      q.pixels,
+      { bytesPerRow: 4 },
+      [1, 1],
+    );
+    expect(q.markUploaded).toHaveBeenCalledOnce();
+    q.render();
+    expect(q.read).toHaveBeenCalledOnce();
+    q.dirty();
+    q.render();
+    q.renderer.setAtlas(q.atlas);
+    q.render();
+    expect(q.queue.copyExternalImageToTexture).toHaveBeenCalledOnce();
+    expect(q.queue.writeTexture).toHaveBeenCalledTimes(3);
+    q.renderer.dispose();
+  });
+
+  it("surfaces other failures and does not mark an unsuccessful upload clean", async () => {
+    const q = await uploadFixture();
+    const failure = new Error("device failure");
+    q.queue.copyExternalImageToTexture.mockImplementationOnce(() => {
+      throw failure;
+    });
+    expect(q.render).toThrow(failure);
+    expect(q.read).not.toHaveBeenCalled();
+    expect(q.markUploaded).not.toHaveBeenCalled();
+    q.queue.copyExternalImageToTexture.mockImplementation(() => {
+      throw new TypeError("image import failed");
+    });
+    q.queue.writeTexture.mockImplementationOnce(() => {
+      throw failure;
+    });
+    expect(q.render).toThrow(failure);
+    expect(q.markUploaded).not.toHaveBeenCalled();
+    q.render();
+    expect(q.markUploaded).toHaveBeenCalledOnce();
+    q.renderer.dispose();
+  });
+});

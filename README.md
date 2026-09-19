@@ -178,6 +178,12 @@ outside either renderer. A fallback mounted after output has already arrived
 must obtain a snapshot or replay from that session; CeleriTTY does not transfer
 its private WASM grid into another terminal implementation.
 
+When Chromium's software WebGPU adapter rejects an external glyph-atlas image
+(for example after a font change), the renderer uploads its RGBA pixels with
+`writeTexture` and remembers that path for later atlas updates. Rendering still
+uses WebGPU; CPU readback happens only when the atlas changes. Other upload
+failures continue to surface as errors.
+
 ### Text input and focus
 
 CeleriTTY owns one native textarea per terminal. Physical keys still use the

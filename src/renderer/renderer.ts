@@ -24,6 +24,7 @@ export class TerminalRenderer implements Renderer {
   #instanceBuffer: GPUBuffer | undefined;
   #instanceCapacity = 0;
   #texture: GPUTexture | undefined;
+  #atlasReadback = false;
   #sampler: GPUSampler;
   #disposed = false;
   #failure: Error | undefined;
@@ -306,11 +307,38 @@ export class TerminalRenderer implements Renderer {
         GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    this.#device.queue.copyExternalImageToTexture({ source }, { texture: this.#texture }, [
-      source.width,
-      source.height,
-    ]);
+    if (this.#atlasReadback) {
+      this.#uploadAtlasPixels(source);
+    } else {
+      try {
+        this.#device.queue.copyExternalImageToTexture({ source }, { texture: this.#texture }, [
+          source.width,
+          source.height,
+        ]);
+      } catch (error) {
+        // Chromium's software WebGPU path can reject a recreated canvas image
+        // (for example after a font change). Keep rendering through WebGPU by
+        // uploading RGBA bytes instead. Other failures must still surface.
+        if (!(error instanceof TypeError)) throw error;
+        this.#uploadAtlasPixels(source);
+        this.#atlasReadback = true;
+      }
+    }
     this.#atlas.markUploaded();
+  }
+
+  #uploadAtlasPixels(source: OffscreenCanvas): void {
+    const context = source.getContext("2d");
+    if (context === null) throw new Error("Could not read the glyph atlas for WebGPU upload.");
+    const pixels = context.getImageData(0, 0, source.width, source.height);
+    // The shader samples alpha coverage only; getImageData's unpremultiplied
+    // RGB channels do not change glyph coverage. Read back only dirty atlases.
+    this.#device.queue.writeTexture(
+      { texture: this.#texture! },
+      pixels.data,
+      { bytesPerRow: source.width * 4 },
+      [source.width, source.height],
+    );
   }
 
   #ensureInstanceCapacity(byteLength: number): void {

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Recover glyph-atlas image import failures on software WebGPU adapters by
+  uploading RGBA pixels. Font changes keep rendering, and unchanged atlases
+  require no CPU readback.
 - Local wheel scrolling uses pixel, line and page deltas instead of moving
   three lines per event. Fractional movement accumulates per terminal; zero
   and horizontal-only events no longer scroll vertically.
