@@ -10,7 +10,8 @@
 import { clampCellPoint } from "./selection-bounds";
 import type { GridSize } from "../renderer/grid-metrics";
 import type { CellPoint } from "./types";
-import { pointerTarget } from "./pointer";
+import { MOUSE_SCROLL_UP, MOUSE_SCROLL_DOWN, pointerTarget } from "./pointer";
+import type { WheelScroll } from "./wheel-scroll";
 import { findLinkAtColumn } from "./link-detection";
 import { EngineTerminal, encodeMouse } from "./wasm";
 
@@ -51,7 +52,15 @@ export function sendPointerToEngine(
   event: MouseEvent | WheelEvent,
   emitData: (bytes: Uint8Array) => void,
 ): boolean {
-  const target = pointerTarget(engine, hostBounds, atlas!.cell, dpr, event);
+  // Alternate-scroll arrows need no coordinates and work without reporting.
+  const alternateWheel =
+    engine.mouseReporting === 0 &&
+    engine.altScreen &&
+    engine.alternateScroll &&
+    (kind === MOUSE_SCROLL_UP || kind === MOUSE_SCROLL_DOWN);
+  const target = alternateWheel
+    ? { line: 0, column: 0 }
+    : pointerTarget(engine, hostBounds, atlas!.cell, dpr, event);
   if (target === null) return false;
 
   const bytes = encodeMouse(
@@ -219,14 +228,41 @@ export function handleMouseUp(
 }
 
 export function handleWheel(
-  state: InputHandlerState,
+  state: Pick<InputHandlerState, "sendPointer"> & {
+    engine: InstanceType<typeof EngineTerminal>;
+    wheel: WheelScroll;
+    cellHeight: number;
+    pageLines: number;
+    sensitivity: number;
+  },
   event: WheelEvent,
   MOUSE_SCROLL_UP: number,
   MOUSE_SCROLL_DOWN: number,
   scrollLines: (delta: number) => void,
 ): void {
+  // Read deltaMode first: browsers may choose delta units when it is accessed.
+  const mode = event.deltaMode;
+  if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
   const up = event.deltaY < 0;
-  if (state.sendPointer(up ? MOUSE_SCROLL_UP : MOUSE_SCROLL_DOWN, 0, event)) return;
+  state.wheel.syncRouting(state.engine);
+  if (state.sendPointer(up ? MOUSE_SCROLL_UP : MOUSE_SCROLL_DOWN, 0, event)) {
+    state.wheel.reset();
+    return;
+  }
   event.preventDefault();
-  scrollLines(up ? 3 : -3);
+  // Reporting may use an unsupported encoding; it must not fall through to
+  // local history. The alternate screen likewise never scrolls main history.
+  if (state.engine.mouseReporting !== 0 || state.engine.altScreen) {
+    state.wheel.reset();
+    return;
+  }
+  const delta = state.wheel.lines(
+    { deltaMode: mode, deltaY: event.deltaY },
+    state.cellHeight,
+    state.pageLines,
+    state.sensitivity,
+    state.engine.displayOffset,
+    state.engine.maxScroll,
+  );
+  if (delta !== 0) scrollLines(delta);
 }

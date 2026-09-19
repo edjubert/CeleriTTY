@@ -197,6 +197,50 @@ moves focus on its own. Do not add a second hidden input around CeleriTTY.
 system. Product-specific mappings such as Cmd+Arrow to readline commands still
 belong in the host; composition keystrokes never escape to those handlers.
 
+### Wheel scrolling
+
+`TerminalOptions.scrollSensitivity?: number` controls **local scrollback**.
+It defaults to `1` and accepts finite, non-negative numbers. `0.5` halves travel;
+`0` disables local wheel scrolling. Invalid values throw `RangeError`
+synchronously, before construction changes the host or `setOptions` applies
+any part of a patch. Omitting it from a patch keeps the current value;
+explicitly passing `undefined` restores `1`.
+
+The default fixes delta conversion rather than applying an arbitrary slowdown:
+
+| `WheelEvent.deltaMode` | Lines before sensitivity |
+|---|---|
+| Pixels (`0`) | `deltaY / renderedCellHeightInCssPixels` |
+| Lines (`1`) | `deltaY` |
+| Pages (`2`) | `deltaY * visibleGridRows` |
+
+Negative vertical deltas move up into history; positive deltas move toward
+the live screen. Zero and horizontal-only events do not scroll vertically.
+Fractions accumulate per terminal, so slow trackpad gestures eventually move
+a line. Direction changes discard the previous direction's fraction, and
+overscroll is discarded at either boundary. Font, grid, scrollback or effective
+sensitivity changes, explicit scrolling, typing, detach/disposal and application
+routing changes clear pending fractions. Unrelated colour updates and ordinary
+process output preserve them. Whole lines are rendered; this is not subpixel
+animation. Metrics are cached during sizing, with no layout read for local
+wheel events.
+
+```ts
+const term = new Terminal(host, { ...options, scrollSensitivity: 0.5 });
+await term.ready;
+term.setOptions({ scrollSensitivity: 0.25 }); // Can be driven by a host preference.
+term.setOptions({ scrollSensitivity: undefined }); // Restore the default.
+```
+
+Applications requesting supported SGR mouse reporting receive one report per
+non-zero vertical wheel event, independent of this local multiplier. On the
+alternate screen, mouse reporting takes priority; without reporting,
+`alternateScroll` sends one arrow key per event with the appropriate cursor-key
+mode. With alternate scroll disabled, no local history is scrolled. An event
+never both sends application input and scrolls local history. Application
+scroll speed remains the application's policy, including when local
+`scrollSensitivity` is `0`.
+
 ### Embedding and resizing
 
 Give the host a definite, non-zero content-box size. CeleriTTY sizes its canvas
@@ -253,7 +297,8 @@ the transport's responsibility.
 
 ## Configuration
 
-`options` is fully resolved. The component applies it and resolves nothing:
+`options` supplies the resolved font, colours, cursor and scrollback. The
+optional browser wheel multiplier defaults to `1`. For the other settings,
 which source won, and which overrides applied, is the host's decision.
 
 To resolve an `alacritty.toml`:
@@ -369,7 +414,8 @@ above still applies.
 ### Neovim PTY regression
 
 The optional integration suite exercises an actual Neovim session through a
-PTY: start, insert, edit, save, quit, and execute a shell command.
+PTY: start, wheel with mouse reporting and alternate-scroll arrows, insert,
+edit, save, quit, and execute a shell command.
 Run `pnpm test:neovim` separately from `pnpm test:browser`.
 It requires Python >=3.8, a POSIX host, and Neovim >=0.11 on `PATH`;
 the spec checks these requirements before starting the fixture.

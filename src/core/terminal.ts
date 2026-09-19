@@ -41,6 +41,7 @@ import type { NativeTextInput } from "./text-input";
 import type { CellPoint, TerminalEvent, TerminalEventMap, TerminalOptions } from "./types";
 import type { TerminalTransport, TerminalOutputOptions } from "../transport/types";
 import { EngineTerminal, encodeKey, engineMemory, loadEngine } from "./wasm";
+import { scrollSensitivity, WheelScroll } from "./wheel-scroll";
 
 type AnyListener = (payload: never) => void;
 
@@ -53,6 +54,8 @@ export class Terminal {
   readonly #addedTabIndex: boolean;
 
   #options: TerminalOptions;
+  readonly #wheel = new WheelScroll();
+  #wheelCellHeight = 1;
   #engine: InstanceType<typeof EngineTerminal> | undefined;
   #renderer: Renderer | undefined;
   #atlas: GlyphAtlas | undefined;
@@ -83,7 +86,7 @@ export class Terminal {
     createRenderer: RendererFactory = createWebGpuRenderer,
   ) {
     this.#host = host;
-    this.#options = options;
+    this.#options = { ...options, scrollSensitivity: scrollSensitivity(options.scrollSensitivity) };
     this.#createRenderer = createRenderer;
 
     this.#canvas = host.ownerDocument.createElement("canvas");
@@ -239,6 +242,7 @@ export class Terminal {
     this.#replyToQueries = replyToQueries;
     const engine = this.#requireEngine("feed");
     engine.feed(bytes);
+    if (this.#wheel.pending) this.#wheel.syncRouting(engine);
     this.#syncPending = engine.syncPending;
     this.#dirty = true;
     // Drain before emitting: a data listener may synchronously feed more output.
@@ -314,6 +318,7 @@ export class Terminal {
 
   /** Disconnect. Safe to call when nothing is attached. */
   detach(): void {
+    this.#wheel.reset();
     this.#transportGeneration += 1;
     const subscriptions = this.#transportOff;
     this.#transportOff = [];
@@ -327,8 +332,18 @@ export class Terminal {
   }
 
   setOptions(patch: Partial<TerminalOptions>): void {
+    this.#assertLive("setOptions");
     const previous = this.#options;
-    this.#options = { ...previous, ...patch };
+    const next = { ...previous, ...patch };
+    next.scrollSensitivity = scrollSensitivity(next.scrollSensitivity);
+    this.#options = next;
+    if (
+      next.scrollSensitivity !== previous.scrollSensitivity ||
+      patch.font !== undefined ||
+      patch.scrollback !== undefined
+    ) {
+      this.#wheel.reset();
+    }
 
     if (patch.colors !== undefined) {
       this.#renderer?.setPalette(buildPaletteOverrides(this.#options.colors));
@@ -361,11 +376,13 @@ export class Terminal {
 
   scrollLines(delta: number): void {
     this.#requireEngine("scrollLines").scrollLines(delta);
+    this.#wheel.reset();
     this.#dirty = true;
   }
 
   scrollToBottom(): void {
     this.#requireEngine("scrollToBottom").resetScroll();
+    this.#wheel.reset();
     this.#dirty = true;
   }
 
@@ -395,6 +412,7 @@ export class Terminal {
   #flushSync(force: boolean): Uint8Array | undefined {
     const engine = this.#engine;
     if (!this.#syncPending || engine === undefined || !engine.flushSync(force)) return;
+    if (this.#wheel.pending) this.#wheel.syncRouting(engine);
     this.#syncPending = engine.syncPending;
     this.#dirty = true;
     const replies = engine.takeOutput();
@@ -455,6 +473,9 @@ export class Terminal {
     const bounds = this.#surfaceBounds();
     const measured = measureSurface(bounds, atlas.cell, window.devicePixelRatio);
     if (measured === null) return;
+    const cellHeight = atlas.cell.height / window.devicePixelRatio;
+    if (cellHeight !== this.#wheelCellHeight) this.#wheel.reset();
+    this.#wheelCellHeight = cellHeight;
 
     this.#canvas.width = measured.pixels.width;
     this.#canvas.height = measured.pixels.height;
@@ -465,6 +486,7 @@ export class Terminal {
       return;
     }
     engine.resize(changed.columns, changed.lines);
+    this.#wheel.reset();
     this.#grid = changed;
     this.#selectionStart = clampCellPoint(this.#selectionStart, changed);
     this.#selectionEnd = clampCellPoint(this.#selectionEnd, changed);
@@ -493,6 +515,7 @@ export class Terminal {
   #handleKeyDown(event: KeyboardEvent): void {
     if (this.#engine === undefined || isCompositionKey(event)) return;
     if (handleKeyDown(this.#buildState(), event, encodeKey)) {
+      this.#wheel.reset();
       // `preventDefault` normally keeps a physical key from also producing an
       // input event. The guard covers browser/editor combinations that emit
       // both anyway, without suppressing later virtual-keyboard tasks.
@@ -512,14 +535,34 @@ export class Terminal {
     const payload = paste && engine.bracketedPaste ? `\x1b[200~${safePaste}\x1b[201~` : normalized;
     this.#clearSelection();
     engine.resetScroll();
+    this.#wheel.reset();
     this.#dirty = true;
     this.#emit("data", new TextEncoder().encode(payload));
   }
 
+  readonly #sendPointer = (
+    kind: number,
+    button: number,
+    event: MouseEvent | WheelEvent,
+  ): boolean => {
+    const engine = this.#engine;
+    const atlas = this.#atlas;
+    if (engine === undefined || atlas === undefined) return false;
+    return sendPointerToEngine(
+      engine,
+      atlas,
+      this.#surfaceBounds,
+      window.devicePixelRatio,
+      kind,
+      button,
+      event,
+      (bytes) => this.#emit("data", bytes),
+    );
+  };
+
   #buildState(): InputHandlerState {
     const engine = this.#engine;
     const atlas = this.#atlas;
-    const dpr = window.devicePixelRatio;
 
     return {
       engine,
@@ -527,19 +570,7 @@ export class Terminal {
       clearSelection: () => this.#clearSelection(),
       cellAt: (event) =>
         atlas ? computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid) : null,
-      sendPointer: (kind, button, event) =>
-        engine !== undefined && atlas !== undefined
-          ? sendPointerToEngine(
-              engine,
-              atlas,
-              this.#surfaceBounds,
-              dpr,
-              kind,
-              button,
-              event,
-              (bytes) => this.#emit("data", bytes),
-            )
-          : false,
+      sendPointer: this.#sendPointer,
       dragging: this.#dragging,
       setDragging: (v) => {
         this.#dragging = v;
@@ -607,9 +638,24 @@ export class Terminal {
   }
 
   #handleWheel(event: WheelEvent): void {
-    const state = this.#buildState();
-    handleWheel(state, event, MOUSE_SCROLL_UP, MOUSE_SCROLL_DOWN, (delta) =>
-      this.scrollLines(delta),
+    const engine = this.#engine;
+    if (engine === undefined || this.#atlas === undefined) return;
+    handleWheel(
+      {
+        engine,
+        sendPointer: this.#sendPointer,
+        wheel: this.#wheel,
+        cellHeight: this.#wheelCellHeight,
+        pageLines: this.#grid.lines,
+        sensitivity: this.#options.scrollSensitivity!,
+      },
+      event,
+      MOUSE_SCROLL_UP,
+      MOUSE_SCROLL_DOWN,
+      (delta) => {
+        engine.scrollLines(delta);
+        this.#dirty = true;
+      },
     );
   }
 

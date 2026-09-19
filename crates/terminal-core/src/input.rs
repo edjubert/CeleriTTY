@@ -192,7 +192,7 @@ pub struct MouseInput {
 pub fn encode_mouse(input: &MouseInput) -> Option<Vec<u8>> {
     // The wheel drives the alternate screen's pager directly when alternate
     // scroll is on, since such programs do not listen for mouse reports.
-    if input.alternate_scroll && input.alt_screen {
+    if input.reporting == MouseReporting::None && input.alternate_scroll && input.alt_screen {
         // Under DECCKM the arrows are SS3-prefixed (`ESC O A`), not CSI. Neovim
         // and every full-screen pager enable it, so emitting CSI here would send
         // bytes the running program does not read as arrow keys.
@@ -509,11 +509,13 @@ mod tests {
     #[test]
     fn the_wheel_sends_arrows_under_alternate_scroll() {
         let mut input = mouse(MouseEventKind::ScrollUp, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1b[A".to_vec()));
 
         let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1b[B".to_vec()));
@@ -525,16 +527,27 @@ mod tests {
         // SS3. Emitting CSI there sends bytes the program does not read as
         // arrow keys, so the wheel would silently do nothing.
         let mut input = mouse(MouseEventKind::ScrollUp, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         input.application_cursor = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1bOA".to_vec()));
 
         let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         input.application_cursor = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1bOB".to_vec()));
+    }
+
+    #[test]
+    fn mouse_reporting_takes_priority_over_alternate_scroll() {
+        let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 2, 3);
+        input.alternate_scroll = true;
+        input.alt_screen = true;
+        input.application_cursor = true;
+        assert_eq!(encode_mouse(&input), Some(b"\x1b[<65;4;3M".to_vec()));
     }
 
     #[test]
