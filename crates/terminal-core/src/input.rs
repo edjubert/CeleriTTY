@@ -201,7 +201,7 @@ pub fn encode_mouse(input: &MouseInput) -> Option<Vec<u8>> {
 
     // The wheel drives the alternate screen's pager directly when alternate
     // scroll is on, since such programs do not listen for mouse reports.
-    if input.alternate_scroll && input.alt_screen {
+    if input.reporting == MouseReporting::None && input.alternate_scroll && input.alt_screen {
         // Under DECCKM the arrows are SS3-prefixed (`ESC O A`), not CSI. Neovim
         // and every full-screen pager enable it, so emitting CSI here would send
         // bytes the running program does not read as arrow keys.
@@ -569,6 +569,7 @@ mod tests {
         let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 2, 3);
         input.alternate_scroll = true;
         input.alt_screen = true;
+        input.application_cursor = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1b[<65;4;3M".to_vec()));
     }
 
