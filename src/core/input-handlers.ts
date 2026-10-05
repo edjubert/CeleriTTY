@@ -108,6 +108,45 @@ export function resolveLinkUrl(
   return findLinkAtColumn(row, cell.column)?.url ?? null;
 }
 
+/**
+ * Lines a selection drag should scroll when the pointer is past a viewport
+ * edge: positive to reveal history above the top, negative to return toward
+ * the live screen below the bottom. Zero when the pointer is inside.
+ *
+ * Selection anchors are viewport-relative, so a drag clamped to the edge can
+ * never reach scrollback without this — in Alacritty, dragging past the edge
+ * is exactly how users select into history.
+ */
+export function dragAutoScrollLines(
+  bounds: { top: number; bottom: number },
+  cellHeightCss: number,
+  clientY: number,
+): number {
+  if (!Number.isFinite(cellHeightCss) || cellHeightCss <= 0) return 0;
+  const cap = 5;
+  if (clientY < bounds.top) {
+    return Math.min(cap, Math.ceil((bounds.top - clientY) / cellHeightCss));
+  }
+  if (clientY > bounds.bottom) {
+    return -Math.min(cap, Math.ceil((clientY - bounds.bottom) / cellHeightCss));
+  }
+  return 0;
+}
+
+/**
+ * Keep a selection anchor on the same content after the viewport scrolled by
+ * `delta` lines up (positive). Viewport-relative anchors must move down with
+ * the content; `clampCellPoint` then keeps them inside the grid.
+ */
+export function shiftCellPoint(
+  point: CellPoint | null,
+  delta: number,
+  grid: GridSize,
+): CellPoint | null {
+  if (point === null || delta === 0) return point;
+  return clampCellPoint({ line: point.line + delta, column: point.column }, grid);
+}
+
 export function handleKeyDown(
   state: InputHandlerState,
   event: KeyboardEvent,
