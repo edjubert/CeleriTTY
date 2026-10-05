@@ -3,6 +3,8 @@
 
 use wasm_bindgen::prelude::*;
 
+use vte::ansi::Rgb;
+
 use crate::input::{
     encode_key, encode_mouse, KeyInput, MouseButton, MouseEventKind, MouseInput, MouseReporting,
 };
@@ -44,6 +46,28 @@ impl Terminal {
                 screen_lines,
             }),
         }
+    }
+
+    /// Store the theme's named colors, used to answer OSC 10/11/12 queries.
+    /// Programs like Vibe or Neovim detect the terminal's background this way
+    /// before rendering; a terminal that stays silent leaves them guessing.
+    ///
+    /// Colors are `#rrggbb` strings, the palette format the host already uses.
+    /// Throws when a color is malformed — the host's palette is configuration,
+    /// and a silent default would hide the bug.
+    #[wasm_bindgen(js_name = setNamedColors)]
+    pub fn set_named_colors(
+        &mut self,
+        foreground: &str,
+        background: &str,
+        cursor: &str,
+    ) -> Result<(), JsError> {
+        self.core.set_named_colors(
+            parse_hex_rgb(foreground, "foreground")?,
+            parse_hex_rgb(background, "background")?,
+            parse_hex_rgb(cursor, "cursor")?,
+        );
+        Ok(())
     }
 
     /// Feed a chunk of PTY output. Safe to call with a sequence split across
@@ -237,6 +261,22 @@ pub fn encode_key_js(
 /// Encode a mouse event as PTY bytes.
 ///
 /// `kind`: 0 press, 1 release, 2 move, 3 scroll up, 4 scroll down.
+/// Parse a `#rrggbb` palette color into an RGB triple.
+fn parse_hex_rgb(value: &str, field: &str) -> Result<Rgb, JsError> {
+    let hex = value.strip_prefix('#').unwrap_or(value);
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(JsError::new(&format!(
+            "invalid {field} color: expected #rrggbb, got \"{value}\""
+        )));
+    }
+    let channel = |range: std::ops::Range<usize>| u8::from_str_radix(&hex[range], 16).unwrap_or(0);
+    Ok(Rgb {
+        r: channel(0..2),
+        g: channel(2..4),
+        b: channel(4..6),
+    })
+}
+
 /// `button`: 0 none, 1 left, 2 middle, 3 right.
 /// `reporting`: 0 none, 1 click, 2 drag, 3 motion — take it from the
 /// terminal's `mouseReporting` getter.

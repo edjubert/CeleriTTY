@@ -4,7 +4,7 @@ use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
-use vte::ansi::{Processor, Timeout};
+use vte::ansi::{NamedColor, Processor, Rgb, Timeout};
 
 use crate::sync_timeout::SyncTimeout;
 
@@ -54,6 +54,10 @@ pub struct TerminalCore {
     packed: Vec<u32>,
     /// Flat `(line, left, right)` triplets, refilled by `take_damage`.
     damage: Vec<u32>,
+    /// The theme's foreground, background, and cursor colors, in that order.
+    /// The host knows the theme, not the parser — OSC 10/11/12 queries are
+    /// answered from here.
+    named_colors: [Option<Rgb>; 3],
 }
 
 impl TerminalCore {
@@ -67,7 +71,14 @@ impl TerminalCore {
             parser: Processor::new(),
             packed: vec![0; cells * WORDS_PER_CELL],
             damage: Vec::new(),
+            named_colors: [None; 3],
         }
+    }
+
+    /// Store the theme's named colors. Called once at startup, before any PTY
+    /// output can contain a query.
+    pub fn set_named_colors(&mut self, foreground: Rgb, background: Rgb, cursor: Rgb) {
+        self.named_colors = [Some(foreground), Some(background), Some(cursor)];
     }
 
     /// Feed a chunk of PTY output. The parser keeps its state across calls, so
@@ -77,6 +88,25 @@ impl TerminalCore {
         // user input or reset_scroll should return it to the live screen.
         self.flush_sync(false);
         self.parser.advance(&mut self.term, bytes);
+        self.answer_color_requests();
+    }
+
+    /// Resolve queued OSC color queries (10/11/12, and 4;index;?) into reply
+    /// bytes. Only the named colors are answered: the ANSI palette belongs to
+    /// the renderer and no query has arrived for it in practice, so an index
+    /// without a stored color stays silent rather than inventing one.
+    fn answer_color_requests(&mut self) {
+        for (index, formatter) in self.pty_output.take_color_requests() {
+            let Some(color) = self.term.colors()[index].or_else(|| match index {
+                i if i == NamedColor::Foreground as usize => self.named_colors[0],
+                i if i == NamedColor::Background as usize => self.named_colors[1],
+                i if i == NamedColor::Cursor as usize => self.named_colors[2],
+                _ => None,
+            }) else {
+                continue;
+            };
+            self.pty_output.push(formatter(color).as_bytes());
+        }
     }
 
     /// Apply an expired synchronized update, including when no new PTY data
@@ -393,6 +423,65 @@ mod tests {
 
         assert_eq!(split.row_text(0), whole.row_text(0));
         assert_eq!(split.row_text(0), "    X");
+    }
+
+    fn core_with_theme() -> TerminalCore {
+        let mut core = TerminalCore::new(TerminalSize {
+            columns: 20,
+            screen_lines: 5,
+        });
+        core.set_named_colors(
+            Rgb {
+                r: 0xc0,
+                g: 0xc0,
+                b: 0xc0,
+            },
+            Rgb {
+                r: 0x1e,
+                g: 0x1e,
+                b: 0x2e,
+            },
+            Rgb {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+            },
+        );
+        core
+    }
+
+    #[test]
+    fn osc_background_queries_are_answered_with_the_theme_color() {
+        let mut core = core_with_theme();
+        core.feed(b"\x1b]11;?\x07");
+        // xterm's four-digit-per-channel reply format, BEL-terminated to
+        // match the query's terminator.
+        assert_eq!(core.take_output(), b"\x1b]11;rgb:1e1e/1e1e/2e2e\x07");
+    }
+
+    #[test]
+    fn osc_foreground_queries_are_answered_with_the_theme_color() {
+        let mut core = core_with_theme();
+        core.feed(b"\x1b[?1049h\x1b]10;?\x1b\\");
+        assert_eq!(core.take_output(), b"\x1b]10;rgb:c0c0/c0c0/c0c0\x1b\\");
+    }
+
+    #[test]
+    fn osc_palette_queries_stay_silent_rather_than_inventing_a_color() {
+        let mut core = core_with_theme();
+        core.feed(b"\x1b]4;2;?\x07");
+        assert_eq!(core.take_output(), b"");
+    }
+
+    #[test]
+    fn an_osc_set_color_overrides_the_theme_in_later_queries() {
+        let mut core = core_with_theme();
+        core.feed(b"\x1b]11;rgb:1122/3344/5566\x07");
+        assert_eq!(core.take_output(), b"");
+        // The four-digit input is stored at 8-bit precision (0x11/0x33/0x55),
+        // and the reply formatter echoes each channel twice.
+        core.feed(b"\x1b]11;?\x07");
+        assert_eq!(core.take_output(), b"\x1b]11;rgb:1111/3333/5555\x07");
     }
 
     #[test]

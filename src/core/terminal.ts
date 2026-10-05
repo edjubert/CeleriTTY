@@ -159,6 +159,13 @@ export class Terminal {
     this.#assertLive("start");
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
+    // OSC 10/11/12 queries must be answerable from the first byte the PTY
+    // sends: Vibe asks for the background color before it renders anything.
+    engine.setNamedColors(
+      this.#options.colors.foreground,
+      this.#options.colors.background,
+      this.#options.colors.cursor,
+    );
     this.#engine = engine;
     starting = false;
     this.#grid = { columns: 80, lines: 24 };
