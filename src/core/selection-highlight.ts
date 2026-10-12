@@ -43,7 +43,10 @@ export function applySelectionHighlight(
   let rawTopColumn = Math.floor(start.column);
   let rawBottomLine = Math.floor(end.line);
   let rawBottomColumn = Math.floor(end.column);
-  if (rawTopLine > rawBottomLine || (rawTopLine === rawBottomLine && rawTopColumn > rawBottomColumn)) {
+  if (
+    rawTopLine > rawBottomLine ||
+    (rawTopLine === rawBottomLine && rawTopColumn > rawBottomColumn)
+  ) {
     const line = rawTopLine;
     const column = rawTopColumn;
     rawTopLine = rawBottomLine;

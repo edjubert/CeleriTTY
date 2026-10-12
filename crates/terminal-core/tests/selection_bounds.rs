@@ -31,8 +31,7 @@ fn clamps_both_endpoints_before_normalizing_and_converting_scrollback() {
                                     .clamp(topmost, bottommost)
                                     .saturating_add(offset)
                             };
-                            let mut start =
-                                (to_viewport(start_line), start_col.min(columns - 1));
+                            let mut start = (to_viewport(start_line), start_col.min(columns - 1));
                             let mut end = (to_viewport(end_line), end_col.min(columns - 1));
                             if start > end {
                                 std::mem::swap(&mut start, &mut end);

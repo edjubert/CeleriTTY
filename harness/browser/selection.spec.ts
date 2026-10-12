@@ -283,7 +283,7 @@ test("wheel scrolling keeps the selection anchored on the same content", async (
     // Select a row in the middle of the viewport.
     const midY = box.top + box.height / 2;
     const startX = box.left + cell.width / devicePixelRatio;
-    const endX = box.left + cell.width * 4 / devicePixelRatio;
+    const endX = box.left + (cell.width * 4) / devicePixelRatio;
     const at = (x: number, y: number) => ({ bubbles: true, clientX: x, clientY: y });
     canvas.dispatchEvent(new MouseEvent("mousedown", at(startX, midY)));
     window.dispatchEvent(new MouseEvent("mousemove", at(endX, midY)));
@@ -352,7 +352,7 @@ test("selection scrolled past the viewport edge disappears visually but keeps it
     // Select the topmost visible row.
     const topY = box.top + cell.height / devicePixelRatio / 2;
     const startX = box.left + cell.width / devicePixelRatio;
-    const endX = box.left + cell.width * 4 / devicePixelRatio;
+    const endX = box.left + (cell.width * 4) / devicePixelRatio;
     const at = (x: number, y: number) => ({ bubbles: true, clientX: x, clientY: y });
     canvas.dispatchEvent(new MouseEvent("mousedown", at(startX, topY)));
     window.dispatchEvent(new MouseEvent("mousemove", at(endX, topY)));
