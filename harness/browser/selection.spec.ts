@@ -260,6 +260,140 @@ test("selection drags past the viewport edges auto-scroll the display", async ({
   expect(label(linesDown[0])).toBe(label(result.beforeDown[result.startRowDown]));
 });
 
+test("wheel scrolling keeps the selection anchored on the same content", async ({ page }) => {
+  await page.goto("/browser.html");
+  await page.waitForFunction(() => window.qa?.state().frames > 0);
+  const result = await page.evaluate(async () => {
+    const { qa } = window;
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    qa.host.style.width = "401.6px";
+    qa.host.style.height = "241.2px";
+    await frame();
+    await frame();
+    const canvas = qa.host.querySelector("canvas")!;
+    const box = canvas.getBoundingClientRect();
+    qa.feed(
+      "\x1b[2J\x1b[H" +
+        Array.from({ length: 60 }, (_, i) => `R${String(i).padStart(3, "0")}`).join("\r\n"),
+    );
+    await frame();
+    await frame();
+
+    const cell = qa.state().cell;
+    // Select a row in the middle of the viewport.
+    const midY = box.top + box.height / 2;
+    const startX = box.left + cell.width / devicePixelRatio;
+    const endX = box.left + cell.width * 4 / devicePixelRatio;
+    const at = (x: number, y: number) => ({ bubbles: true, clientX: x, clientY: y });
+    canvas.dispatchEvent(new MouseEvent("mousedown", at(startX, midY)));
+    window.dispatchEvent(new MouseEvent("mousemove", at(endX, midY)));
+    window.dispatchEvent(new MouseEvent("mouseup", at(endX, midY)));
+    const expectedText = qa.terminal.getSelection();
+
+    // Scroll up into history: the selection must follow the content.
+    qa.terminal.scrollLines(3);
+    await frame();
+    await frame();
+    const afterScrollUp = qa.terminal.getSelection();
+
+    // Scroll back down to the live screen.
+    qa.terminal.scrollLines(-3);
+    await frame();
+    await frame();
+    const afterScrollDown = qa.terminal.getSelection();
+
+    // Scroll up again, then jump to bottom: the selection must still track
+    // the same content.
+    qa.terminal.scrollLines(3);
+    await frame();
+    await frame();
+    qa.terminal.scrollToBottom();
+    await frame();
+    await frame();
+    const afterScrollToBottom = qa.terminal.getSelection();
+
+    return {
+      expectedText,
+      afterScrollUp,
+      afterScrollDown,
+      afterScrollToBottom,
+    };
+  });
+
+  // The selection text is invariant under viewport scrolling.
+  expect(result.afterScrollUp).toBe(result.expectedText);
+  expect(result.afterScrollDown).toBe(result.expectedText);
+  expect(result.afterScrollToBottom).toBe(result.expectedText);
+});
+
+test("selection scrolled past the viewport edge disappears visually but keeps its text", async ({
+  page,
+}) => {
+  await page.goto("/browser.html");
+  await page.waitForFunction(() => window.qa?.state().frames > 0);
+  const result = await page.evaluate(async () => {
+    const { qa } = window;
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    qa.host.style.width = "401.6px";
+    qa.host.style.height = "241.2px";
+    await frame();
+    await frame();
+    const canvas = qa.host.querySelector("canvas")!;
+    const box = canvas.getBoundingClientRect();
+    qa.feed(
+      "\x1b[2J\x1b[H" +
+        Array.from({ length: 60 }, (_, i) => `R${String(i).padStart(3, "0")}`).join("\r\n"),
+    );
+    await frame();
+    await frame();
+
+    const cell = qa.state().cell;
+    const grid = qa.state().grid;
+    // Select the topmost visible row.
+    const topY = box.top + cell.height / devicePixelRatio / 2;
+    const startX = box.left + cell.width / devicePixelRatio;
+    const endX = box.left + cell.width * 4 / devicePixelRatio;
+    const at = (x: number, y: number) => ({ bubbles: true, clientX: x, clientY: y });
+    canvas.dispatchEvent(new MouseEvent("mousedown", at(startX, topY)));
+    window.dispatchEvent(new MouseEvent("mousemove", at(endX, topY)));
+    window.dispatchEvent(new MouseEvent("mouseup", at(endX, topY)));
+    const expectedText = qa.terminal.getSelection();
+    const firstRow = qa.state().rows[0];
+
+    // Scroll up enough that the selected row leaves the viewport entirely.
+    qa.terminal.scrollLines(grid.lines + 5);
+    await frame();
+    await frame();
+    const selectionOffScreen = qa.terminal.getSelection();
+    const rowsAfterScroll = qa.state().rows;
+
+    // Scroll back down: the selection reappears on the same content.
+    qa.terminal.scrollToBottom();
+    await frame();
+    await frame();
+    const selectionBack = qa.terminal.getSelection();
+    const rowsAfterReturn = qa.state().rows;
+
+    return {
+      expectedText,
+      firstRow,
+      selectionOffScreen,
+      rowsAfterScroll,
+      selectionBack,
+      rowsAfterReturn,
+      gridLines: grid.lines,
+    };
+  });
+
+  // The selection text is preserved even when scrolled off-screen.
+  expect(result.selectionOffScreen).toBe(result.expectedText);
+  // The viewport actually moved (the selected row is no longer visible).
+  expect(result.rowsAfterScroll[0]).not.toBe(result.firstRow);
+  // After returning to the bottom, the selection still resolves the same text.
+  expect(result.selectionBack).toBe(result.expectedText);
+  expect(result.rowsAfterReturn[0]).toBe(result.firstRow);
+});
+
 test("raw WASM boundary defends invalid and reversed viewport coordinates", async ({ page }) => {
   await page.goto("/browser.html");
   await page.waitForFunction(() => !!window.qa);

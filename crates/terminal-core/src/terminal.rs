@@ -234,10 +234,12 @@ impl TerminalCore {
         });
     }
 
-    /// Text between two viewport points, inclusive. Clamp both endpoints to
-    /// the current viewport before converting to scrollback grid coordinates,
-    /// then normalize their order. Public WASM callers and stale drag anchors
-    /// after a resize must never reach bounds_to_string with invalid indices.
+    /// Text between two viewport points, inclusive. Convert viewport
+    /// coordinates to grid coordinates (subtracting the display offset), then
+    /// clamp to the grid bounds — the scrollback top and the viewport bottom —
+    /// so a selection that scrolled past a viewport edge still resolves the
+    /// correct text. Public WASM callers and stale drag anchors after a
+    /// resize must never reach bounds_to_string with invalid indices.
     pub fn selected_text(
         &self,
         start_line: i32,
@@ -245,10 +247,13 @@ impl TerminalCore {
         end_line: i32,
         end_col: usize,
     ) -> String {
-        let offset = self.display_offset();
+        let offset = self.display_offset() as i32;
+        let grid = self.term.grid();
+        let topmost = grid.topmost_line().0;
+        let bottommost = grid.bottommost_line().0;
         let point = |line: i32, col: usize| {
             Point::new(
-                Line(line.clamp(0, self.screen_lines() as i32 - 1)) - offset,
+                Line(line.saturating_sub(offset).clamp(topmost, bottommost)),
                 Column(col.min(self.columns() - 1)),
             )
         };

@@ -372,12 +372,19 @@ export class Terminal {
   }
 
   scrollLines(delta: number): void {
-    this.#requireEngine("scrollLines").scrollLines(delta);
-    this.#dirty = true;
+    this.#scrollViewport(delta, false);
   }
 
   scrollToBottom(): void {
-    this.#requireEngine("scrollToBottom").resetScroll();
+    const engine = this.#requireEngine("scrollToBottom");
+    const before = engine.displayOffset;
+    engine.resetScroll();
+    // The content moved up by `before` lines: shift the selection anchors
+    // with it so the highlight stays on the same text. Anchors may leave the
+    // viewport — the highlight skips off-screen rows and getSelection still
+    // resolves the full text via grid coordinates.
+    this.#selectionStart = shiftCellPoint(this.#selectionStart, -before, this.#grid, false);
+    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, -before, this.#grid, false);
     this.#dirty = true;
   }
 
@@ -674,18 +681,33 @@ export class Terminal {
     this.#dirty = true;
   }
 
-  /** Scroll by `delta` lines, re-anchoring the selection on the same content. */
-  #applyDragScroll(delta: number): number {
+  /**
+   * Scroll the viewport by `delta` lines and re-anchor the selection on the
+   * same content. Viewport-relative anchors must move with the content:
+   * scrolling up (positive delta) pushes content down, so anchors shift down
+   * by the number of lines actually moved. Returns the effective movement.
+   *
+   * When `clampLines` is false (wheel scroll), anchors may leave the viewport
+   * — the highlight skips off-screen rows and getSelection still resolves the
+   * full text. When true (drag auto-scroll), anchors stay clamped to the grid
+   * because the pointer is physically at the edge.
+   */
+  #scrollViewport(delta: number, clampLines: boolean): number {
     const engine = this.#engine;
     if (engine === undefined || delta === 0) return 0;
     const before = engine.displayOffset;
     engine.scrollLines(delta);
     const moved = engine.displayOffset - before;
     if (moved === 0) return 0;
-    this.#selectionStart = shiftCellPoint(this.#selectionStart, moved, this.#grid);
-    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, moved, this.#grid);
+    this.#selectionStart = shiftCellPoint(this.#selectionStart, moved, this.#grid, clampLines);
+    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, moved, this.#grid, clampLines);
     this.#dirty = true;
     return moved;
+  }
+
+  /** Scroll by `delta` lines during a drag, keeping anchors clamped to the grid. */
+  #applyDragScroll(delta: number): number {
+    return this.#scrollViewport(delta, true);
   }
 
   #stopDragScroll(): void {

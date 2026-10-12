@@ -119,4 +119,22 @@ describe("shiftCellPoint", () => {
     expect(shiftCellPoint(null, 3, grid)).toBeNull();
     expect(shiftCellPoint({ line: 4, column: 7 }, 0, grid)).toEqual({ line: 4, column: 7 });
   });
+
+  it("lets anchors leave the viewport when clampLines is false", () => {
+    // Scroll up past the top: the anchor goes negative (above the viewport).
+    expect(shiftCellPoint({ line: 2, column: 7 }, -5, grid, false)).toEqual({
+      line: -3,
+      column: 7,
+    });
+    // Scroll down past the bottom: the anchor goes past the last row.
+    expect(shiftCellPoint({ line: 22, column: 7 }, 5, grid, false)).toEqual({
+      line: 27,
+      column: 7,
+    });
+    // Columns are still clamped to the grid.
+    expect(shiftCellPoint({ line: 4, column: 200 }, 3, grid, false)).toEqual({
+      line: 7,
+      column: 79,
+    });
+  });
 });

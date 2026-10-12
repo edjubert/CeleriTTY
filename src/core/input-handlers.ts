@@ -136,15 +136,28 @@ export function dragAutoScrollLines(
 /**
  * Keep a selection anchor on the same content after the viewport scrolled by
  * `delta` lines up (positive). Viewport-relative anchors must move down with
- * the content; `clampCellPoint` then keeps them inside the grid.
+ * the content.
+ *
+ * When `clampLines` is true (the default), the result is clamped inside the
+ * grid — used by resize and drag auto-scroll where the anchor must stay
+ * visible. When false, the line may go negative or past the last row: the
+ * selection then extends outside the viewport and `applySelectionHighlight`
+ * simply skips those rows. `getSelection` still resolves the full text
+ * because the Rust side converts viewport coordinates to grid coordinates
+ * before clamping to the scrollback bounds.
  */
 export function shiftCellPoint(
   point: CellPoint | null,
   delta: number,
   grid: GridSize,
+  clampLines = true,
 ): CellPoint | null {
   if (point === null || delta === 0) return point;
-  return clampCellPoint({ line: point.line + delta, column: point.column }, grid);
+  const line = point.line + delta;
+  return {
+    line: clampLines ? Math.max(0, Math.min(Math.floor(line), grid.lines - 1)) : Math.floor(line),
+    column: Math.max(0, Math.min(Math.floor(point.column), grid.columns - 1)),
+  };
 }
 
 export function handleKeyDown(
