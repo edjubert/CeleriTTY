@@ -67,6 +67,18 @@ describe("terminal protocol replies", () => {
     expect(output).toHaveLength(1);
   });
 
+  it("answers OSC background queries with the theme's background color", () => {
+    const output: string[] = [];
+    terminal.on("data", (bytes) => output.push(decode(bytes)));
+    terminal.feed(encode("\x1b]11;?\x07"));
+    const background = (options as { colors: { background: string } }).colors.background;
+    const value = background.replace("#", "");
+    const channel = (index: number) => value.slice(index * 2, index * 2 + 2);
+    expect(output).toEqual([
+      `\x1b]11;rgb:${channel(0)}${channel(0)}/${channel(1)}${channel(1)}/${channel(2)}${channel(2)}\x07`,
+    ]);
+  });
+
   it("forwards replies through the attached transport", () => {
     let receive: (bytes: Uint8Array) => void = () => {};
     const write = vi.fn();

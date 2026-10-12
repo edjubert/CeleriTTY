@@ -108,6 +108,58 @@ export function resolveLinkUrl(
   return findLinkAtColumn(row, cell.column)?.url ?? null;
 }
 
+/**
+ * Lines a selection drag should scroll when the pointer is past a viewport
+ * edge: positive to reveal history above the top, negative to return toward
+ * the live screen below the bottom. Zero when the pointer is inside.
+ *
+ * Selection anchors are viewport-relative, so a drag clamped to the edge can
+ * never reach scrollback without this — in Alacritty, dragging past the edge
+ * is exactly how users select into history.
+ */
+export function dragAutoScrollLines(
+  bounds: { top: number; bottom: number },
+  cellHeightCss: number,
+  clientY: number,
+): number {
+  if (!Number.isFinite(cellHeightCss) || cellHeightCss <= 0) return 0;
+  const cap = 5;
+  if (clientY < bounds.top) {
+    return Math.min(cap, Math.ceil((bounds.top - clientY) / cellHeightCss));
+  }
+  if (clientY > bounds.bottom) {
+    return -Math.min(cap, Math.ceil((clientY - bounds.bottom) / cellHeightCss));
+  }
+  return 0;
+}
+
+/**
+ * Keep a selection anchor on the same content after the viewport scrolled by
+ * `delta` lines up (positive). Viewport-relative anchors must move down with
+ * the content.
+ *
+ * When `clampLines` is true (the default), the result is clamped inside the
+ * grid — used by resize and drag auto-scroll where the anchor must stay
+ * visible. When false, the line may go negative or past the last row: the
+ * selection then extends outside the viewport and `applySelectionHighlight`
+ * simply skips those rows. `getSelection` still resolves the full text
+ * because the Rust side converts viewport coordinates to grid coordinates
+ * before clamping to the scrollback bounds.
+ */
+export function shiftCellPoint(
+  point: CellPoint | null,
+  delta: number,
+  grid: GridSize,
+  clampLines = true,
+): CellPoint | null {
+  if (point === null || delta === 0) return point;
+  const line = point.line + delta;
+  return {
+    line: clampLines ? Math.max(0, Math.min(Math.floor(line), grid.lines - 1)) : Math.floor(line),
+    column: Math.max(0, Math.min(Math.floor(point.column), grid.columns - 1)),
+  };
+}
+
 export function handleKeyDown(
   state: InputHandlerState,
   event: KeyboardEvent,

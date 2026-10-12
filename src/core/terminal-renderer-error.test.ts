@@ -18,6 +18,7 @@ vi.mock("./wasm", () => ({
     readonly alternateScroll = false;
     readonly altScreen = false;
     setScrollbackLines(): void {}
+    setNamedColors(): void {}
     flushSync(): boolean {
       return false;
     }

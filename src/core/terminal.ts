@@ -15,6 +15,7 @@ import type { Renderer, RendererFactory } from "../renderer/renderer-interface";
 import { bindInput } from "./input-bindings";
 import {
   computeCellPoint,
+  dragAutoScrollLines,
   handleKeyDown,
   handleMouseDown,
   handleMouseMove,
@@ -22,6 +23,7 @@ import {
   handleWheel,
   resolveLinkUrl,
   sendPointerToEngine,
+  shiftCellPoint,
 } from "./input-handlers";
 import type { InputHandlerState } from "./input-handlers";
 import { computeGridResize, measureSurface } from "./metrics";
@@ -73,6 +75,8 @@ export class Terminal {
   #selectionStart: CellPoint | null = null;
   #selectionEnd: CellPoint | null = null;
   #dragging = false;
+  #dragScrollDelta = 0;
+  #dragScrollTimer: ReturnType<typeof setInterval> | undefined;
   #hoveredLink: string | null = null;
 
   readonly ready: Promise<void>;
@@ -155,6 +159,13 @@ export class Terminal {
     this.#assertLive("start");
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
+    // OSC 10/11/12 queries must be answerable from the first byte the PTY
+    // sends: Vibe asks for the background color before it renders anything.
+    engine.setNamedColors(
+      this.#options.colors.foreground,
+      this.#options.colors.background,
+      this.#options.colors.cursor,
+    );
     this.#engine = engine;
     starting = false;
     this.#grid = { columns: 80, lines: 24 };
@@ -181,6 +192,7 @@ export class Terminal {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#stopDragScroll();
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     safely(this.#observer?.disconnect.bind(this.#observer));
@@ -360,12 +372,19 @@ export class Terminal {
   }
 
   scrollLines(delta: number): void {
-    this.#requireEngine("scrollLines").scrollLines(delta);
-    this.#dirty = true;
+    this.#scrollViewport(delta, false);
   }
 
   scrollToBottom(): void {
-    this.#requireEngine("scrollToBottom").resetScroll();
+    const engine = this.#requireEngine("scrollToBottom");
+    const before = engine.displayOffset;
+    engine.resetScroll();
+    // The content moved up by `before` lines: shift the selection anchors
+    // with it so the highlight stays on the same text. Anchors may leave the
+    // viewport — the highlight skips off-screen rows and getSelection still
+    // resolves the full text via grid coordinates.
+    this.#selectionStart = shiftCellPoint(this.#selectionStart, -before, this.#grid, false);
+    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, -before, this.#grid, false);
     this.#dirty = true;
   }
 
@@ -567,10 +586,12 @@ export class Terminal {
   }
 
   #handleMouseDown(event: MouseEvent): void {
+    this.#stopDragScroll();
     handleMouseDown(this.#buildState(), event, toEncoderButton, MOUSE_PRESS);
   }
 
   #handleMouseMove(event: MouseEvent): void {
+    if (this.#dragging) this.#autoScrollDrag(event);
     const state = this.#buildState();
     handleMouseMove(
       state,
@@ -601,6 +622,7 @@ export class Terminal {
   }
 
   #handleMouseUp(event: MouseEvent): void {
+    this.#stopDragScroll();
     handleMouseUp(this.#buildState(), event, toEncoderButton, MOUSE_RELEASE, () =>
       this.getSelection(),
     );
@@ -611,6 +633,87 @@ export class Terminal {
     handleWheel(state, event, MOUSE_SCROLL_UP, MOUSE_SCROLL_DOWN, (delta) =>
       this.scrollLines(delta),
     );
+  }
+
+  /**
+   * Scroll the viewport while a selection drag sits past a viewport edge, and
+   * keep scrolling on a timer: `mousemove` stops firing once the pointer rests
+   * outside the surface, but the user still expects the selection to keep
+   * extending into scrollback until the button is released.
+   */
+  #autoScrollDrag(event: MouseEvent): void {
+    const atlas = this.#atlas;
+    const engine = this.#engine;
+    if (atlas === undefined || engine === undefined) return;
+
+    const bounds = this.#surfaceBounds();
+    const delta = dragAutoScrollLines(
+      { top: bounds.top, bottom: bounds.bottom },
+      atlas.cell.height / window.devicePixelRatio,
+      event.clientY,
+    );
+    if (delta === 0) {
+      this.#stopDragScroll();
+      return;
+    }
+    this.#applyDragScroll(delta);
+    this.#dragScrollDelta = delta;
+    if (this.#dragScrollTimer === undefined) {
+      this.#dragScrollTimer = setInterval(() => this.#dragScrollTick(), 50);
+    }
+  }
+
+  #dragScrollTick(): void {
+    const moved = this.#applyDragScroll(this.#dragScrollDelta);
+    if (moved === 0) {
+      this.#stopDragScroll();
+      return;
+    }
+    // No mousemove event will pin the end anchor while the pointer rests
+    // outside the surface, so pin it to the edge the drag is crossing.
+    this.#selectionEnd = clampCellPoint(
+      {
+        line: this.#dragScrollDelta > 0 ? 0 : this.#grid.lines - 1,
+        column: this.#selectionEnd?.column ?? 0,
+      },
+      this.#grid,
+    );
+    this.#dirty = true;
+  }
+
+  /**
+   * Scroll the viewport by `delta` lines and re-anchor the selection on the
+   * same content. Viewport-relative anchors must move with the content:
+   * scrolling up (positive delta) pushes content down, so anchors shift down
+   * by the number of lines actually moved. Returns the effective movement.
+   *
+   * When `clampLines` is false (wheel scroll), anchors may leave the viewport
+   * — the highlight skips off-screen rows and getSelection still resolves the
+   * full text. When true (drag auto-scroll), anchors stay clamped to the grid
+   * because the pointer is physically at the edge.
+   */
+  #scrollViewport(delta: number, clampLines: boolean): number {
+    const engine = this.#engine;
+    if (engine === undefined || delta === 0) return 0;
+    const before = engine.displayOffset;
+    engine.scrollLines(delta);
+    const moved = engine.displayOffset - before;
+    if (moved === 0) return 0;
+    this.#selectionStart = shiftCellPoint(this.#selectionStart, moved, this.#grid, clampLines);
+    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, moved, this.#grid, clampLines);
+    this.#dirty = true;
+    return moved;
+  }
+
+  /** Scroll by `delta` lines during a drag, keeping anchors clamped to the grid. */
+  #applyDragScroll(delta: number): number {
+    return this.#scrollViewport(delta, true);
+  }
+
+  #stopDragScroll(): void {
+    if (this.#dragScrollTimer !== undefined) clearInterval(this.#dragScrollTimer);
+    this.#dragScrollTimer = undefined;
+    this.#dragScrollDelta = 0;
   }
 
   #clearSelection(): void {

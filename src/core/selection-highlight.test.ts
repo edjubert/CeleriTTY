@@ -63,3 +63,56 @@ it("bounds stale or outside anchors before walking a resized snapshot", () => {
   applySelectionHighlight(packed, 0, { line: 0, column: 0 }, { line: 1, column: 1 });
   applySelectionHighlight(packed, 3, { line: NaN, column: 0 }, { line: 1, column: 1 });
 });
+
+describe("applySelectionHighlight with off-screen anchors", () => {
+  const flagsAt = (packed: Uint32Array, columns: number, line: number, column: number): number =>
+    packed[(line * columns + column) * WORDS_PER_CELL + 3] ?? 0;
+
+  it("paints nothing when the selection is entirely above the viewport", () => {
+    const packed = emptyGrid(4, 3);
+    applySelectionHighlight(packed, 4, { line: -5, column: 0 }, { line: -1, column: 3 });
+    for (let line = 0; line < 3; line++)
+      for (let column = 0; column < 4; column++)
+        expect(flagsAt(packed, 4, line, column) & FLAG_INVERSE).toBe(0);
+  });
+
+  it("paints nothing when the selection is entirely below the viewport", () => {
+    const packed = emptyGrid(4, 3);
+    applySelectionHighlight(packed, 4, { line: 5, column: 0 }, { line: 8, column: 3 });
+    for (let line = 0; line < 3; line++)
+      for (let column = 0; column < 4; column++)
+        expect(flagsAt(packed, 4, line, column) & FLAG_INVERSE).toBe(0);
+  });
+
+  it("paints only the visible part when the selection straddles the top edge", () => {
+    const packed = emptyGrid(4, 3);
+    // Selection from line -2 to line 1: only lines 0-1 are visible.
+    applySelectionHighlight(packed, 4, { line: -2, column: 1 }, { line: 1, column: 2 });
+    // Line 0: full width (interior line of the selection).
+    for (let column = 0; column < 4; column++)
+      expect(flagsAt(packed, 4, 0, column) & FLAG_INVERSE).toBe(FLAG_INVERSE);
+    // Line 1: columns 0-2 (up to the end point).
+    expect(flagsAt(packed, 4, 1, 0) & FLAG_INVERSE).toBe(FLAG_INVERSE);
+    expect(flagsAt(packed, 4, 1, 2) & FLAG_INVERSE).toBe(FLAG_INVERSE);
+    expect(flagsAt(packed, 4, 1, 3) & FLAG_INVERSE).toBe(0);
+    // Line 2: not part of the selection.
+    for (let column = 0; column < 4; column++)
+      expect(flagsAt(packed, 4, 2, column) & FLAG_INVERSE).toBe(0);
+  });
+
+  it("paints only the visible part when the selection straddles the bottom edge", () => {
+    const packed = emptyGrid(4, 3);
+    // Selection from line 1 to line 5: only lines 1-2 are visible.
+    applySelectionHighlight(packed, 4, { line: 1, column: 1 }, { line: 5, column: 2 });
+    // Line 0: not part of the selection.
+    for (let column = 0; column < 4; column++)
+      expect(flagsAt(packed, 4, 0, column) & FLAG_INVERSE).toBe(0);
+    // Line 1: columns 1-3 (from the start point to end of row).
+    expect(flagsAt(packed, 4, 1, 0) & FLAG_INVERSE).toBe(0);
+    expect(flagsAt(packed, 4, 1, 1) & FLAG_INVERSE).toBe(FLAG_INVERSE);
+    expect(flagsAt(packed, 4, 1, 3) & FLAG_INVERSE).toBe(FLAG_INVERSE);
+    // Line 2: full width (interior line of the selection).
+    for (let column = 0; column < 4; column++)
+      expect(flagsAt(packed, 4, 2, column) & FLAG_INVERSE).toBe(FLAG_INVERSE);
+  });
+});

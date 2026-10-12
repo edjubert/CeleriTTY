@@ -23,6 +23,7 @@ vi.mock("./wasm", () => ({
     readonly altScreen = false;
 
     setScrollbackLines(): void {}
+    setNamedColors(): void {}
     get syncPending(): boolean {
       return wasm.pending;
     }

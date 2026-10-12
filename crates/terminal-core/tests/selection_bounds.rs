@@ -14,12 +14,25 @@ fn clamps_both_endpoints_before_normalizing_and_converting_scrollback() {
                 columns,
                 screen_lines: 3,
             });
+            // Viewport lines are clamped to the grid bounds (scrollback top
+            // through viewport bottom), not to the viewport alone: a selection
+            // scrolled past an edge must still resolve the correct text.
+            // Compute the expected result by converting to grid coordinates,
+            // clamping, and converting back to viewport coordinates.
+            let offset = core.display_offset() as i32;
+            let topmost = -(core.max_scroll() as i32);
+            let bottommost = 2; // screen_lines - 1
             for start_line in [i32::MIN, -1, 0, 1, 2, 3, i32::MAX] {
                 for end_line in [i32::MIN, -1, 0, 1, 2, 3, i32::MAX] {
                     for start_col in [0, 1, 7, 8, usize::MAX] {
                         for end_col in [0, 1, 7, 8, usize::MAX] {
-                            let mut start = (start_line.clamp(0, 2), start_col.min(columns - 1));
-                            let mut end = (end_line.clamp(0, 2), end_col.min(columns - 1));
+                            let to_viewport = |l: i32| {
+                                l.saturating_sub(offset)
+                                    .clamp(topmost, bottommost)
+                                    .saturating_add(offset)
+                            };
+                            let mut start = (to_viewport(start_line), start_col.min(columns - 1));
+                            let mut end = (to_viewport(end_line), end_col.min(columns - 1));
                             if start > end {
                                 std::mem::swap(&mut start, &mut end);
                             }
@@ -59,10 +72,13 @@ fn scrollback_selection_still_uses_zero_based_viewport_rows() {
         columns: 4,
         screen_lines: 1,
     });
-    assert_eq!(
-        core.selected_text(i32::MAX, usize::MAX, i32::MIN, 0),
-        core.row_text(0)
-    );
+    // Extreme coordinates clamp to the grid bounds (scrollback top through
+    // viewport bottom), so the result spans the whole buffer — not just the
+    // single viewport row.
+    let all = core.selected_text(i32::MAX, usize::MAX, i32::MIN, 0);
+    assert!(all.contains(&core.row_text(0)));
+    // Viewport coordinates still work after the resize.
+    assert_eq!(core.selected_text(0, 0, 0, usize::MAX), core.row_text(0));
 }
 
 #[test]

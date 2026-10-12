@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { computeCellPoint } from "./input-handlers";
+import { computeCellPoint, dragAutoScrollLines, shiftCellPoint } from "./input-handlers";
 
 describe("computeCellPoint", () => {
   const atlas = { cell: { width: 10, height: 20 } };
@@ -65,4 +65,76 @@ describe("selection coordinates at fractional and stale surface boundaries", () 
       ).toBeNull();
     });
   }
+});
+
+describe("drag auto-scroll", () => {
+  const bounds = { top: 100, bottom: 300 };
+
+  it("does not scroll while the pointer stays inside the viewport", () => {
+    expect(dragAutoScrollLines(bounds, 20, 100)).toBe(0);
+    expect(dragAutoScrollLines(bounds, 20, 200)).toBe(0);
+    expect(dragAutoScrollLines(bounds, 20, 300)).toBe(0);
+  });
+
+  it("scrolls up, one line per cell height above the top edge", () => {
+    expect(dragAutoScrollLines(bounds, 20, 99.9)).toBe(1);
+    expect(dragAutoScrollLines(bounds, 20, 81)).toBe(1);
+    expect(dragAutoScrollLines(bounds, 20, 80)).toBe(1);
+    expect(dragAutoScrollLines(bounds, 20, 60)).toBe(2);
+  });
+
+  it("scrolls down, one line per cell height below the bottom edge", () => {
+    expect(dragAutoScrollLines(bounds, 20, 300.1)).toBe(-1);
+    expect(dragAutoScrollLines(bounds, 20, 341)).toBe(-3);
+  });
+
+  it("caps the scroll rate so a far pointer cannot jump through history", () => {
+    expect(dragAutoScrollLines(bounds, 20, -5000)).toBe(5);
+    expect(dragAutoScrollLines(bounds, 20, 5000)).toBe(-5);
+  });
+
+  it("ignores degenerate cell heights", () => {
+    expect(dragAutoScrollLines(bounds, 0, 50)).toBe(0);
+    expect(dragAutoScrollLines(bounds, Number.NaN, 50)).toBe(0);
+  });
+});
+
+describe("shiftCellPoint", () => {
+  const grid = { columns: 80, lines: 24 };
+
+  it("moves an anchor down with the content when the viewport scrolls up", () => {
+    expect(shiftCellPoint({ line: 4, column: 7 }, 3, grid)).toEqual({ line: 7, column: 7 });
+  });
+
+  it("moves an anchor up when the viewport scrolls back down", () => {
+    expect(shiftCellPoint({ line: 7, column: 7 }, -3, grid)).toEqual({ line: 4, column: 7 });
+  });
+
+  it("clamps at the grid edges", () => {
+    expect(shiftCellPoint({ line: 22, column: 7 }, 5, grid)).toEqual({ line: 23, column: 7 });
+    expect(shiftCellPoint({ line: 1, column: 7 }, -5, grid)).toEqual({ line: 0, column: 7 });
+  });
+
+  it("leaves null anchors and zero deltas alone", () => {
+    expect(shiftCellPoint(null, 3, grid)).toBeNull();
+    expect(shiftCellPoint({ line: 4, column: 7 }, 0, grid)).toEqual({ line: 4, column: 7 });
+  });
+
+  it("lets anchors leave the viewport when clampLines is false", () => {
+    // Scroll up past the top: the anchor goes negative (above the viewport).
+    expect(shiftCellPoint({ line: 2, column: 7 }, -5, grid, false)).toEqual({
+      line: -3,
+      column: 7,
+    });
+    // Scroll down past the bottom: the anchor goes past the last row.
+    expect(shiftCellPoint({ line: 22, column: 7 }, 5, grid, false)).toEqual({
+      line: 27,
+      column: 7,
+    });
+    // Columns are still clamped to the grid.
+    expect(shiftCellPoint({ line: 4, column: 200 }, 3, grid, false)).toEqual({
+      line: 7,
+      column: 79,
+    });
+  });
 });

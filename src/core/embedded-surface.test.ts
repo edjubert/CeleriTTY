@@ -31,6 +31,7 @@ vi.mock("./wasm", () => ({
       mocks.engines.push(this);
     }
     setScrollbackLines(): void {}
+    setNamedColors(): void {}
     flushSync(): boolean {
       return false;
     }

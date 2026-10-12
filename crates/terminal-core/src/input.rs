@@ -190,6 +190,15 @@ pub struct MouseInput {
 /// historical X10 encoding caps coordinates at column 223, which any wide
 /// editor pane exceeds.
 pub fn encode_mouse(input: &MouseInput) -> Option<Vec<u8>> {
+    // Mouse reporting wins over alternate scroll: an application that asked
+    // for the mouse (Zellij, tmux with mouse on) must receive the wheel as
+    // button 64/65 reports, not arrows. Alacritty and xterm order these the
+    // same way, so translating the wheel first would break scrolling inside
+    // every multiplexer that enables both 1007 and mouse tracking.
+    if input.reporting != MouseReporting::None {
+        return encode_mouse_report(input);
+    }
+
     // The wheel drives the alternate screen's pager directly when alternate
     // scroll is on, since such programs do not listen for mouse reports.
     if input.alternate_scroll && input.alt_screen {
@@ -210,7 +219,12 @@ pub fn encode_mouse(input: &MouseInput) -> Option<Vec<u8>> {
         }
     }
 
-    if input.reporting == MouseReporting::None || !input.sgr_enabled {
+    None
+}
+
+/// SGR mouse reports (mode 1006) — the only encoding this terminal emits.
+fn encode_mouse_report(input: &MouseInput) -> Option<Vec<u8>> {
+    if !input.sgr_enabled {
         return None;
     }
 
@@ -509,11 +523,13 @@ mod tests {
     #[test]
     fn the_wheel_sends_arrows_under_alternate_scroll() {
         let mut input = mouse(MouseEventKind::ScrollUp, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1b[A".to_vec()));
 
         let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1b[B".to_vec()));
@@ -525,16 +541,35 @@ mod tests {
         // SS3. Emitting CSI there sends bytes the program does not read as
         // arrow keys, so the wheel would silently do nothing.
         let mut input = mouse(MouseEventKind::ScrollUp, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         input.application_cursor = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1bOA".to_vec()));
 
         let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 0, 0);
+        input.reporting = MouseReporting::None;
         input.alternate_scroll = true;
         input.alt_screen = true;
         input.application_cursor = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1bOB".to_vec()));
+    }
+
+    #[test]
+    fn mouse_reporting_wins_over_alternate_scroll() {
+        // Zellij and tmux run on the alternate screen and enable both
+        // alternate scroll (1007) and mouse reporting (1000/1002 + 1006).
+        // The wheel must reach them as SGR button 64/65 reports — arrows here
+        // would scroll the pane's shell history instead of its scrollback.
+        let mut input = mouse(MouseEventKind::ScrollUp, MouseButton::None, 2, 3);
+        input.alternate_scroll = true;
+        input.alt_screen = true;
+        assert_eq!(encode_mouse(&input), Some(b"\x1b[<64;4;3M".to_vec()));
+
+        let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 2, 3);
+        input.alternate_scroll = true;
+        input.alt_screen = true;
+        assert_eq!(encode_mouse(&input), Some(b"\x1b[<65;4;3M".to_vec()));
     }
 
     #[test]

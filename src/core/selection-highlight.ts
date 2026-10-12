@@ -36,23 +36,42 @@ export function applySelectionHighlight(
   )
     return;
 
-  // Scalars only: defensive bounds must not allocate on the render path.
-  let topLine = Math.max(0, Math.min(lines - 1, Math.floor(start.line)));
-  let topColumn = Math.max(0, Math.min(columns - 1, Math.floor(start.column)));
-  let bottomLine = Math.max(0, Math.min(lines - 1, Math.floor(end.line)));
-  let bottomColumn = Math.max(0, Math.min(columns - 1, Math.floor(end.column)));
-  if (topLine > bottomLine || (topLine === bottomLine && topColumn > bottomColumn)) {
-    const line = topLine;
-    const column = topColumn;
-    topLine = bottomLine;
-    topColumn = bottomColumn;
-    bottomLine = line;
-    bottomColumn = column;
+  // Normalize order first (a drag can go in any direction), then intersect
+  // with the visible viewport. Lines outside [0, lines-1] happen when the
+  // selection was scrolled past an edge — those rows are simply not painted.
+  let rawTopLine = Math.floor(start.line);
+  let rawTopColumn = Math.floor(start.column);
+  let rawBottomLine = Math.floor(end.line);
+  let rawBottomColumn = Math.floor(end.column);
+  if (
+    rawTopLine > rawBottomLine ||
+    (rawTopLine === rawBottomLine && rawTopColumn > rawBottomColumn)
+  ) {
+    const line = rawTopLine;
+    const column = rawTopColumn;
+    rawTopLine = rawBottomLine;
+    rawTopColumn = rawBottomColumn;
+    rawBottomLine = line;
+    rawBottomColumn = column;
   }
 
+  // Entirely outside the viewport: nothing to paint.
+  if (rawBottomLine < 0 || rawTopLine > lines - 1) return;
+
+  // Scalars only: defensive bounds must not allocate on the render path.
+  // Clamp to the visible range, but remember whether each edge was clamped:
+  // a clamped edge means the selection continues past the viewport, so the
+  // first/last visible row is an interior row (full width), not an endpoint.
+  const topLine = Math.max(0, rawTopLine);
+  const topColumn = Math.max(0, Math.min(columns - 1, rawTopColumn));
+  const bottomLine = Math.min(lines - 1, rawBottomLine);
+  const bottomColumn = Math.max(0, Math.min(columns - 1, rawBottomColumn));
+  const topIsEndpoint = rawTopLine >= 0;
+  const bottomIsEndpoint = rawBottomLine <= lines - 1;
+
   for (let line = topLine; line <= bottomLine; line++) {
-    const fromColumn = line === topLine ? topColumn : 0;
-    const toColumn = line === bottomLine ? bottomColumn : columns - 1;
+    const fromColumn = line === topLine && topIsEndpoint ? topColumn : 0;
+    const toColumn = line === bottomLine && bottomIsEndpoint ? bottomColumn : columns - 1;
     for (let column = fromColumn; column <= toColumn; column++) {
       const flagsIndex = (line * columns + column) * WORDS_PER_CELL + 3;
       packed[flagsIndex] |= FLAG_INVERSE;
