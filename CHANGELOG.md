@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.2.3 — 2026-10-12
+
+### Fixed
+
+- Mouse reporting now takes precedence over alternate scroll. The wheel was
+  translated to arrow keys whenever alternate scroll (mode 1007) was on with
+  the alternate screen active, before checking whether the program had enabled
+  mouse reporting. Zellij enables both 1007 and SGR reporting, so its wheel
+  events arrived as arrows in the pane's shell instead of button 64/65 reports,
+  and pane scrollback never scrolled.
+  ([#18](https://github.com/edjubert/CeleriTTY/pull/18) by @edjubert)
+- The viewport now auto-scrolls during selection drags. Dragging a selection
+  past the top or bottom edge no longer clamps the anchor to the edge and
+  stops there; the viewport scrolls so the selection extends into scrollback,
+  matching Alacritty. The drag scroll runs on a 50 ms timer as well as
+  mousemove, since no mousemove fires while the pointer rests outside the
+  surface.
+  ([#18](https://github.com/edjubert/CeleriTTY/pull/18) by @edjubert)
+- OSC 10/11/12 color queries are now answered. Programs like Vibe ask for the
+  terminal's background (OSC 11) before rendering anything, and wait when the
+  terminal stays silent. Color requests now queue on the pty output and the
+  core answers them with the theme's named colors, passed in at startup via
+  `setNamedColors`. OSC-set colors take precedence over the theme, and OSC 4
+  palette queries stay silent rather than inventing colors the core does not
+  own.
+  ([#18](https://github.com/edjubert/CeleriTTY/pull/18) by @edjubert)
+- The selection highlight now stays anchored on the same content during wheel
+  scroll. `scrollLines` and `scrollToBottom` previously moved the viewport but
+  left the selection anchors at their old viewport coordinates, so the
+  highlight stayed frozen on screen while the text scrolled underneath. Anchors
+  now shift with the content, and may leave the viewport entirely: off-screen
+  rows are not painted, and `getSelection` still resolves the full text via
+  grid coordinates.
+  ([#18](https://github.com/edjubert/CeleriTTY/pull/18) by @edjubert)
+
 ## 1.2.2 — 2026-09-17
 
 ### Changed
