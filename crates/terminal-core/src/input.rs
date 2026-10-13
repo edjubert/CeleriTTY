@@ -190,18 +190,21 @@ pub struct MouseInput {
 /// historical X10 encoding caps coordinates at column 223, which any wide
 /// editor pane exceeds.
 pub fn encode_mouse(input: &MouseInput) -> Option<Vec<u8>> {
-    // Mouse reporting wins over alternate scroll: an application that asked
+    // Supported SGR reporting wins over alternate scroll: an application that asked
     // for the mouse (Zellij, tmux with mouse on) must receive the wheel as
     // button 64/65 reports, not arrows. Alacritty and xterm order these the
     // same way, so translating the wheel first would break scrolling inside
     // every multiplexer that enables both 1007 and mouse tracking.
-    if input.reporting != MouseReporting::None {
+    if input.reporting != MouseReporting::None && input.sgr_enabled {
         return encode_mouse_report(input);
     }
 
     // The wheel drives the alternate screen's pager directly when alternate
-    // scroll is on, since such programs do not listen for mouse reports.
-    if input.alternate_scroll && input.alt_screen {
+    // scroll is on and this encoder cannot emit the requested mouse protocol.
+    if (input.reporting == MouseReporting::None || !input.sgr_enabled)
+        && input.alternate_scroll
+        && input.alt_screen
+    {
         // Under DECCKM the arrows are SS3-prefixed (`ESC O A`), not CSI. Neovim
         // and every full-screen pager enable it, so emitting CSI here would send
         // bytes the running program does not read as arrow keys.
@@ -556,6 +559,33 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_mouse_protocol_keeps_alternate_scroll_arrows() {
+        for application_cursor in [false, true] {
+            for (kind, suffix) in [
+                (MouseEventKind::ScrollUp, b'A'),
+                (MouseEventKind::ScrollDown, b'B'),
+            ] {
+                let mut input = mouse(kind, MouseButton::None, 0, 0);
+                input.reporting = MouseReporting::Click;
+                input.sgr_enabled = false;
+                input.alternate_scroll = true;
+                input.alt_screen = true;
+                input.application_cursor = application_cursor;
+                assert_eq!(
+                    encode_mouse(&input),
+                    Some(vec![
+                        0x1b,
+                        if application_cursor { b'O' } else { b'[' },
+                        suffix
+                    ])
+                );
+                input.alternate_scroll = false;
+                assert_eq!(encode_mouse(&input), None);
+            }
+        }
+    }
+
+    #[test]
     fn mouse_reporting_wins_over_alternate_scroll() {
         // Zellij and tmux run on the alternate screen and enable both
         // alternate scroll (1007) and mouse reporting (1000/1002 + 1006).
@@ -569,6 +599,7 @@ mod tests {
         let mut input = mouse(MouseEventKind::ScrollDown, MouseButton::None, 2, 3);
         input.alternate_scroll = true;
         input.alt_screen = true;
+        input.application_cursor = true;
         assert_eq!(encode_mouse(&input), Some(b"\x1b[<65;4;3M".to_vec()));
     }
 

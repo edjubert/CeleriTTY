@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { expect, test } from "@playwright/test";
 
-test("real Neovim PTY: negotiate sync, insert, edit, save, quit, usable shell", async ({
+test("real Neovim PTY: wheel routing, negotiate sync, insert, edit, save, quit, usable shell", async ({
   page,
 }, info) => {
   test.setTimeout(45000);
@@ -34,6 +34,10 @@ test("real Neovim PTY: negotiate sync, insert, edit, save, quit, usable shell", 
   const grid = await page.evaluate(() => window.qa.state().grid);
   const directory = await mkdtemp(join(tmpdir(), "celeritty-neovim-"));
   const file = join(directory, "saved.txt");
+  await writeFile(
+    join(directory, "wheel.txt"),
+    Array.from({ length: 200 }, (_, i) => `WHEEL_${String(i).padStart(3, "0")}`).join("\n") + "\n",
+  );
   const bridge = spawn(
     "python3",
     ["harness/integration/pty_bridge.py", directory, String(grid.columns), String(grid.lines)],
@@ -75,6 +79,53 @@ test("real Neovim PTY: negotiate sync, insert, edit, save, quit, usable shell", 
   try {
     await expect.poll(screen).toContain("QA_SHELL>");
     await page.locator("textarea").focus();
+    await page.keyboard.type("nvim -u NONE -i NONE -n wheel.txt");
+    await page.keyboard.press("Enter");
+    await expect.poll(screen).toContain("wheel.txt");
+    await page.evaluate(() => window.qa.terminal.setOptions({ scrollSensitivity: 0 }));
+    await page.keyboard.type(":lua vim.o.mouse='a'; vim.cmd('normal! gg'); print('MOUSE_READY')");
+    await page.keyboard.press("Enter");
+    await expect.poll(screen).toContain("MOUSE_READY");
+    const topLine = () =>
+      page.evaluate(() => {
+        const row = window.qa.state().rows.find((row) => /^WHEEL_\d+/.test(row));
+        return row === undefined ? -1 : Number(row.slice(6));
+      });
+    await expect.poll(topLine).toBe(0);
+    const box = await page.locator("canvas").boundingBox();
+    await page.mouse.move(box!.x + 100, box!.y + 100);
+    const mouseInputStart = input.length;
+    await page.mouse.wheel(0, 100);
+    await expect.poll(topLine).toBeGreaterThan(0);
+    const mouseTop = await topLine();
+    expect(Buffer.concat(input.slice(mouseInputStart)).toString()).toContain("\x1b[<65;");
+    await page.mouse.wheel(0, -100);
+    await expect.poll(topLine).toBeLessThan(mouseTop);
+    await page.keyboard.type(":lua vim.o.mouse=''; vim.cmd('normal! gg'); print('ARROWS_READY')");
+    await page.keyboard.press("Enter");
+    await expect.poll(screen).toContain("ARROWS_READY");
+    await expect.poll(topLine).toBe(0);
+    const arrowsInputStart = input.length;
+    // One application arrow per wheel event, independent of local sensitivity.
+    for (let i = 0; i < grid.lines + 5; i++) await page.mouse.wheel(0, 20);
+    await expect.poll(topLine).toBeGreaterThan(0);
+    const arrowTop = await topLine();
+    const arrows = Buffer.concat(input.slice(arrowsInputStart)).toString();
+    expect(arrows).toContain("\x1bOB");
+    expect(arrows).not.toContain("\x1b[<65;");
+    await page.screenshot({ path: info.outputPath("neovim-wheel.png") });
+    await writeFile(
+      info.outputPath("neovim-wheel.json"),
+      JSON.stringify({ mouseTop, arrowTop, localSensitivity: 0 }, null, 2),
+    );
+    await info.attach("neovim-wheel.json", {
+      body: JSON.stringify({ mouseTop, arrowTop, localSensitivity: 0 }),
+      contentType: "application/json",
+    });
+    await page.keyboard.type(":q");
+    await page.keyboard.press("Enter");
+    await expect.poll(screen).toContain("QA_SHELL>");
+    await page.evaluate(() => window.qa.terminal.setOptions({ scrollSensitivity: 1 }));
     await page.keyboard.type("nvim -u NONE -i NONE -n saved.txt");
     await page.keyboard.press("Enter");
     await expect.poll(screen).toContain("saved.txt");

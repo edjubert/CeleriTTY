@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { EngineTerminal, engineMemory, loadEngine } from "./wasm";
+import { WheelScroll } from "./wheel-scroll";
 import {
   handleKeyDown,
   handleWheel,
@@ -15,16 +16,20 @@ beforeAll(async () => {
 let engine: InstanceType<typeof EngineTerminal>;
 afterEach(() => engine?.free());
 
-function setup(): InputHandlerState {
+function setup() {
   engine = new EngineTerminal(32, 3);
   engine.feed(new TextEncoder().encode("https://example.com\r\ntwo\r\nthree\r\nfour\r\nfive"));
   return {
     engine,
+    wheel: new WheelScroll(),
+    cellHeight: 20,
+    pageLines: 3,
+    sensitivity: 1,
     sendPointer: vi.fn(() => false),
     clearSelection: vi.fn(),
     setDirty: vi.fn(),
     emit: vi.fn(),
-  } as unknown as InputHandlerState;
+  };
 }
 
 function firstRenderedRow(): string {
@@ -38,7 +43,7 @@ function firstRenderedRow(): string {
 describe("scrollback through the WASM/input boundary", () => {
   it("wheel scrolling changes the rendered viewport and resolves history links", () => {
     const state = setup();
-    const event = { deltaY: -100, preventDefault: vi.fn() } as unknown as WheelEvent;
+    const event = { deltaMode: 0, deltaY: -100, preventDefault: vi.fn() } as unknown as WheelEvent;
     handleWheel(state, event, 4, 5, (delta) => engine.scrollLines(delta));
     expect(event.preventDefault).toHaveBeenCalled();
     expect(firstRenderedRow()).toBe("https://example.com");
@@ -55,7 +60,7 @@ describe("scrollback through the WASM/input boundary", () => {
     const state = setup();
     state.sendPointer = vi.fn(() => true);
     const scroll = vi.fn();
-    handleWheel(state, { deltaY: -1 } as WheelEvent, 4, 5, scroll);
+    handleWheel(state, { deltaMode: 0, deltaY: -1 } as WheelEvent, 4, 5, scroll);
     expect(scroll).not.toHaveBeenCalled();
     expect(engine.displayOffset).toBe(0);
   });
@@ -68,7 +73,7 @@ describe("scrollback through the WASM/input boundary", () => {
     expect(engine.selectedText(0, 0, 0, 18)).toBe("https://example.com");
     const bytes = new Uint8Array([120]);
     handleKeyDown(
-      state,
+      state as unknown as InputHandlerState,
       { key: "x", preventDefault: vi.fn() } as unknown as KeyboardEvent,
       () => bytes,
     );

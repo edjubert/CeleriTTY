@@ -16,6 +16,11 @@ let grid = { columns: 1, lines: 1 };
 const terminal = new Terminal(host, options, async (canvas, atlas) => {
   cell = atlas.cell;
   const renderer = await createWebGpuRenderer(canvas, atlas);
+  const setAtlas = renderer.setAtlas.bind(renderer);
+  renderer.setAtlas = (atlas) => {
+    cell = atlas.cell;
+    setAtlas(atlas);
+  };
   const render = renderer.render.bind(renderer);
   renderer.render = (value) => {
     grid = { columns: value.columns, lines: value.lines };
