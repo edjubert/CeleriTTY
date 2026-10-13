@@ -24,6 +24,12 @@ vi.mock("./wasm", () => ({
 
     setScrollbackLines(): void {}
     setNamedColors(): void {}
+    rowText(): string {
+      return "see https://example.com now";
+    }
+    selectedText(): string {
+      return "";
+    }
     get syncPending(): boolean {
       return wasm.pending;
     }
@@ -298,5 +304,110 @@ describe("Terminal lifecycle", () => {
 
     expect(frames).toHaveLength(0);
     expect(renderer.dispose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("link activation", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "OffscreenCanvas",
+      class {
+        width: number;
+        height: number;
+        constructor(width: number, height: number) {
+          this.width = width;
+          this.height = height;
+        }
+        getContext() {
+          return {
+            beginPath: vi.fn(),
+            clip: vi.fn(),
+            drawImage: vi.fn(),
+            fillText: vi.fn(),
+            measureText: () => ({ width: 8 }),
+            rect: vi.fn(),
+            restore: vi.fn(),
+            save: vi.fn(),
+          };
+        }
+      },
+    );
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // The stubbed 2D context measures every glyph at 8px wide, and the default
+  // font is 13px at line-height 1.2, so a cell is 8x16 CSS pixels. The mock
+  // row is "see https://example.com now": the URL starts at column 4.
+  function clickCell(host: HTMLElement, column: number, line: number): void {
+    const init = { clientX: column * 8 + 1, clientY: line * 16 + 1, button: 0, bubbles: true };
+    host.dispatchEvent(new MouseEvent("mousedown", init));
+    window.dispatchEvent(new MouseEvent("mouseup", init));
+  }
+
+  it("opens the URL in a new tab and still emits link-activate", async () => {
+    const open = vi.fn();
+    vi.stubGlobal("open", open);
+    const host = document.createElement("div");
+    const terminal = new Terminal(host, OPTIONS, async () => createRenderer());
+    await terminal.ready;
+    const activations: unknown[] = [];
+    terminal.on("link-activate", (link) => activations.push(link));
+
+    clickCell(host, 5, 0);
+
+    expect(open).toHaveBeenCalledWith("https://example.com", "_blank", "noopener,noreferrer");
+    expect(activations).toEqual([
+      {
+        url: "https://example.com",
+        modifiers: { ctrl: false, alt: false, shift: false, meta: false },
+      },
+    ]);
+    terminal.dispose();
+  });
+
+  it("does not open the URL when links.open is false, but still emits", async () => {
+    const open = vi.fn();
+    vi.stubGlobal("open", open);
+    const host = document.createElement("div");
+    const terminal = new Terminal(host, { ...OPTIONS, links: { open: false } }, async () =>
+      createRenderer(),
+    );
+    await terminal.ready;
+    const activations: unknown[] = [];
+    terminal.on("link-activate", (link) => activations.push(link));
+
+    clickCell(host, 5, 0);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(activations).toHaveLength(1);
+    terminal.dispose();
+  });
+
+  it("does nothing when the click lands outside any URL", async () => {
+    const open = vi.fn();
+    vi.stubGlobal("open", open);
+    const host = document.createElement("div");
+    const terminal = new Terminal(host, OPTIONS, async () => createRenderer());
+    await terminal.ready;
+    const activations: unknown[] = [];
+    terminal.on("link-activate", (link) => activations.push(link));
+
+    clickCell(host, 0, 0);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(activations).toHaveLength(0);
+    terminal.dispose();
   });
 });

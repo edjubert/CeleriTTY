@@ -53,11 +53,11 @@ term.options = {
 };
 
 term.transport = new WebSocketTransport("ws://localhost:8080");
-
-term.addEventListener("link-activate", (event) => {
-  window.open(event.detail.url, "_blank", "noopener");
-});
 ```
+
+URLs in the output are clickable out of the box: clicking one opens it in a
+new tab. Set `links: { open: false }` in the options to route `link-activate`
+yourself.
 
 ```js
 // server.mjs
@@ -111,7 +111,7 @@ new WebSocketServer({ port: 8080 }).on("connection", (socket) => {
 | `data` | `Uint8Array` headed to the process |
 | `resize` | `{ columns, lines }` |
 | `selection-change` | `string \| null` |
-| `link-activate` | `{ url, modifiers: { ctrl, alt, shift, meta } }` |
+| `link-activate` | `{ url, modifiers: { ctrl, alt, shift, meta } }` — fired after the URL was opened in a new tab (unless `links.open` is `false`) |
 | `link-hover` | `string \| null` — the URL under the pointer, or `null` on leave |
 | `error` | `Error` |
 | `diagnostic` | `Error` — non-fatal GPU call failure; no automatic teardown |
@@ -268,6 +268,12 @@ const options = resolveAlacrittyToml(tomlText, fallbackPalette);
 `fallbackPalette` supplies every colour the file does not set. Alacritty
 documents its scalar defaults, so those are built in; it documents no default
 palette.
+
+Link behaviour is the one option the component resolves itself:
+`links.open` defaults to `true`, so an activated URL opens in a new tab
+(`noopener,noreferrer`). Set `links: { open: false }` to receive
+`link-activate` without anything opening — a host routing internal domains
+differently, or showing a context menu, wants that.
 
 The same resolver is the Rust crate `alacritty-config`, for backends reading
 the file from disk — the one part of this a browser cannot do.

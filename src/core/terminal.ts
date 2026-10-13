@@ -40,7 +40,13 @@ import { clampCellPoint } from "./selection-bounds";
 import { applySelectionHighlight } from "./selection-highlight";
 import { createNativeTextInput, isCompositionKey } from "./text-input";
 import type { NativeTextInput } from "./text-input";
-import type { CellPoint, TerminalEvent, TerminalEventMap, TerminalOptions } from "./types";
+import type {
+  CellPoint,
+  LinkActivation,
+  TerminalEvent,
+  TerminalEventMap,
+  TerminalOptions,
+} from "./types";
 import type { TerminalTransport, TerminalOutputOptions } from "../transport/types";
 import { EngineTerminal, encodeKey, engineMemory, loadEngine } from "./wasm";
 
@@ -542,7 +548,10 @@ export class Terminal {
 
     return {
       engine,
-      emit: (event, payload) => this.#emit(event as TerminalEvent, payload as never),
+      emit: (event, payload) => {
+        if (event === "link-activate") this.#openLink(payload as LinkActivation);
+        this.#emit(event as TerminalEvent, payload as never);
+      },
       clearSelection: () => this.#clearSelection(),
       cellAt: (event) =>
         atlas ? computeCellPoint(atlas, this.#surfaceBounds, event, this.#grid) : null,
@@ -721,6 +730,16 @@ export class Terminal {
     this.#selectionStart = null;
     this.#selectionEnd = null;
     this.#emit("selection-change", null);
+  }
+
+  /**
+   * Open an activated link in a new tab, unless the host turned that off.
+   * Runs before the `link-activate` listeners so a host that routes links
+   * itself (context menu, in-app viewer) can still observe every activation.
+   */
+  #openLink(link: LinkActivation): void {
+    if (this.#options.links?.open === false) return;
+    window.open(link.url, "_blank", "noopener,noreferrer");
   }
 
   #requireEngine(method: string): InstanceType<typeof EngineTerminal> {

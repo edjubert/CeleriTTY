@@ -36,9 +36,7 @@ term.options = {
 
 term.transport = new WebSocketTransport("ws://localhost:8080");
 
-term.addEventListener("link-activate", (event) => {
-  window.open(event.detail.url, "_blank", "noopener");
-});
+// URLs in the output open in a new tab on click by default; no listener needed.
 
 term.addEventListener("error", (event) => {
   console.error("terminal:", event.detail);

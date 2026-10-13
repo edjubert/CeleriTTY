@@ -51,6 +51,16 @@ export interface TerminalCursor {
   blink: boolean;
 }
 
+/** Link behaviour. Every field is optional; an absent `links` means defaults. */
+export interface TerminalLinks {
+  /**
+   * Open an activated link in a new tab. Defaults to `true`. Set to `false`
+   * when the host routes `link-activate` itself — the event still fires
+   * either way.
+   */
+  open?: boolean;
+}
+
 /**
  * A fully resolved configuration. The component resolves nothing: whoever
  * constructs this object decided which source won and applied any overrides.
@@ -61,6 +71,7 @@ export interface TerminalOptions {
   cursor: TerminalCursor;
   /** Lines of history kept above the live screen. */
   scrollback: number;
+  links?: TerminalLinks;
 }
 
 export interface CellPoint {
@@ -77,9 +88,10 @@ export interface LinkModifiers {
 }
 
 /**
- * A link the user activated. The component never opens it — routing is
- * product policy (internal versus external domains, a native context menu,
- * a session cookie), and belongs to whoever embeds the terminal.
+ * A link the user activated. The component opens it in a new tab by default
+ * (`links.open`); the event still fires so a host can observe or route
+ * differently — internal versus external domains, a native context menu, a
+ * session cookie.
  */
 export interface LinkActivation {
   url: string;
@@ -98,8 +110,8 @@ export interface TerminalEventMap {
   /** The selected text, or `null` when the selection was cleared. */
   "selection-change": string | null;
   /**
-   * The user activated a link. Nothing has been opened; the host decides
-   * whether and how.
+   * The user activated a link. Unless `links.open` is `false`, the component
+   * has already opened it in a new tab by the time this fires.
    */
   "link-activate": LinkActivation;
   /**
