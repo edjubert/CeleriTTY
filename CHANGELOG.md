@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.4 — 2026-10-13
 
 ### Fixed
 
@@ -22,6 +22,7 @@
   `0` disables it and permits host-page scrolling outside application mouse
   and alternate-screen modes, without suppressing application input. See the README
   for delta conversion and fractional-state behavior.
+  ([#17](https://github.com/edjubert/CeleriTTY/pull/17) by @rle-mino)
 
 ## 1.2.3 — 2026-10-12
 
