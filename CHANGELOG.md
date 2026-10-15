@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `clearScreen()` keeps the prompt visible. It clears the scrollback and the
+  rows above the cursor's line, which becomes the first row, instead of
+  erasing the whole screen behind the shell's back and leaving an empty
+  terminal until the next prompt. It no longer touches the alternate screen.
+
 ## 1.2.4 — 2026-10-13
 
 ### Fixed
