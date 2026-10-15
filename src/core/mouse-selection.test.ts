@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { FakeRenderer } from "../renderer/fake-renderer";
-import type { TerminalOptions } from "./types";
+import type { LinkActivation, TerminalOptions } from "./types";
 import { loadEngine } from "./wasm";
 import { Terminal } from "./terminal";
 
@@ -131,17 +131,68 @@ describe("mouse selection", () => {
     expect(terminal.getSelection()).toBe("cat /etc/hosts");
   });
 
-  it("a link opens on a single click only", () => {
-    const activate = vi.fn();
-    terminal.on("link-activate", activate);
-    press(at(0, 27), 1);
-    release(at(0, 27), 1);
-    expect(activate).toHaveBeenCalledOnce();
-    press(at(0, 27), 2);
-    release(at(0, 27), 2);
-    // alacritty's word boundaries include `:`, as in Alacritty itself.
-    expect(terminal.getSelection()).toBe("//example.com");
-    expect(activate).toHaveBeenCalledOnce();
+  describe("links", () => {
+    const LINK = 27; // A cell of https://example.com.
+    let activate: Mock<(link: LinkActivation) => void>;
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      activate = vi.fn();
+      terminal.on("link-activate", activate);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("open on a single click, once no second click follows", () => {
+      press(at(0, LINK), 1);
+      release(at(0, LINK), 1);
+      expect(activate).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      expect(activate).toHaveBeenCalledOnce();
+      expect(activate.mock.calls[0][0]).toMatchObject({ url: "https://example.com" });
+    });
+
+    it("do not open during a double or triple click", () => {
+      for (const clicks of [2, 3]) {
+        for (let detail = 1; detail <= clicks; detail++) {
+          press(at(0, LINK), detail);
+          release(at(0, LINK), detail);
+        }
+        vi.runAllTimers();
+      }
+      expect(activate).not.toHaveBeenCalled();
+      // alacritty's word boundaries include `:`, as in Alacritty itself.
+      press(at(0, LINK), 1);
+      release(at(0, LINK), 1);
+      press(at(0, LINK), 2);
+      release(at(0, LINK), 2);
+      vi.runAllTimers();
+      expect(terminal.getSelection()).toBe("//example.com");
+      expect(activate).not.toHaveBeenCalled();
+    });
+
+    it("do not open when a drag inside one cell selects its character", () => {
+      for (const [from, to] of [
+        [0.2, 0.8],
+        [0.8, 0.2],
+      ]) {
+        press(at(0, LINK, from));
+        move(at(0, LINK, to));
+        release(at(0, LINK, to));
+        vi.runAllTimers();
+        expect(terminal.getSelection()).toBe("a");
+      }
+      expect(activate).not.toHaveBeenCalled();
+    });
+
+    it("do not open after the terminal is disposed", () => {
+      press(at(0, LINK), 1);
+      release(at(0, LINK), 1);
+      terminal.dispose();
+      vi.runAllTimers();
+      expect(activate).not.toHaveBeenCalled();
+    });
   });
 
   it("a triple click selects the whole line, and dragging extends it line by line", () => {

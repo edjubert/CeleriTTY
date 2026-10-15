@@ -13,8 +13,13 @@
 
 - Double click selects a word and triple click selects a line, soft wraps
   included. Dragging afterwards extends the selection by words or lines.
-  Word boundaries follow Alacritty's defaults. Links open on a single click
-  only.
+  Word boundaries follow Alacritty's defaults.
+
+### Changed
+
+- `link-activate` fires 500 ms after an isolated click that selects nothing,
+  instead of on release. The first click of a double or triple click on a
+  URL, or a drag selecting one of its characters, no longer opens it.
 
 ## 1.2.4 — 2026-10-13
 

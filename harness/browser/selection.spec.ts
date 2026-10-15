@@ -223,6 +223,53 @@ test("real clicks: one selects nothing, two a word, three the line", async ({ pa
   expect(await read()).toEqual({ text: null, inverse: [] });
 });
 
+test("real link clicks: only an isolated click without a selection opens", async ({ page }) => {
+  await page.goto("/browser.html");
+  await page.waitForFunction(() => window.qa?.state().frames > 0);
+  await page.evaluate(() => {
+    const qa = window.qa as typeof window.qa & { links: string[] };
+    qa.links = [];
+    qa.terminal.on("link-activate", (link) => qa.links.push(link.url));
+    qa.feed("\x1b[?25l\x1b[2J\x1b[H$ cat https://example.com", false);
+  });
+  const box = (await page.locator("canvas").boundingBox())!;
+  const { cell } = await page.evaluate(() => window.qa.state());
+  const dpr = await page.evaluate(() => devicePixelRatio);
+  const x = (column: number) => box.x + (column * cell.width) / dpr;
+  const y = box.y + (0.5 * cell.height) / dpr;
+  const read = () =>
+    page.evaluate(() => ({
+      text: window.qa.terminal.getSelection(),
+      links: (window.qa as typeof window.qa & { links: string[] }).links.length,
+    }));
+  // Longer than the activation wait: a pending link click would have fired.
+  const settle = () => page.waitForTimeout(700);
+
+  await page.mouse.dblclick(x(17.25), y);
+  await settle();
+  expect(await read()).toEqual({ text: "//example.com", links: 0 });
+
+  await page.mouse.click(x(17.25), y, { clickCount: 3 });
+  await settle();
+  expect(await read()).toEqual({ text: "$ cat https://example.com", links: 0 });
+
+  for (const [from, to] of [
+    [17.2, 17.8],
+    [17.8, 17.2],
+  ]) {
+    await page.mouse.move(x(from), y);
+    await page.mouse.down();
+    await page.mouse.move(x(to), y);
+    await page.mouse.up();
+    await settle();
+    expect(await read()).toEqual({ text: "m", links: 0 });
+  }
+
+  await page.mouse.click(x(17.25), y);
+  await settle();
+  expect(await read()).toEqual({ text: null, links: 1 });
+});
+
 test("selection drags past the viewport edges auto-scroll the display", async ({ page }) => {
   await page.goto("/browser.html");
   await page.waitForFunction(() => window.qa?.state().frames > 0);

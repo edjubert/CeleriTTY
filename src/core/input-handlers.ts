@@ -9,7 +9,7 @@
 
 import { clampCellPoint } from "./selection-bounds";
 import type { GridSize } from "../renderer/grid-metrics";
-import type { CellPoint } from "./types";
+import type { CellPoint, LinkActivation } from "./types";
 import { MOUSE_SCROLL_UP, MOUSE_SCROLL_DOWN, pointerTarget } from "./pointer";
 import type { WheelScroll } from "./wheel-scroll";
 import { findLinkAtColumn } from "./link-detection";
@@ -31,6 +31,10 @@ export interface InputHandlerState {
   /** Where the current selection started, and how it grows. */
   selectionAnchor: CellPoint | null;
   selectionKind: SelectionKind;
+  /** Whether the current selection covers any cell. */
+  hasSelection: () => boolean;
+  /** Open a link once the click proves not to start a double click. */
+  activateLink: (link: LinkActivation) => void;
   dirty: boolean;
   setDirty: (v: boolean) => void;
   host: { focus: () => void };
@@ -290,15 +294,21 @@ export function handleMouseUp(
     const start = state.selectionAnchor;
     const end = state.cellAt(event);
 
-    // A link opens on a plain click, not on a drag or a word/line selection.
-    const moved =
-      start === null || end === null || start.line !== end.line || start.column !== end.column;
+    // A link opens on a plain click: one that stayed on its cell and selected
+    // nothing. Crossing the middle of a cell selects that character instead,
+    // and a double or triple click selects text.
+    const click =
+      state.selectionKind === SELECTION_SIMPLE &&
+      !state.hasSelection() &&
+      start !== null &&
+      end !== null &&
+      start.line === end.line &&
+      start.column === end.column;
 
-    if (!moved && state.selectionKind === SELECTION_SIMPLE) {
+    if (click) {
       const linkUrl = state.linkAt?.(event);
       if (linkUrl !== undefined && linkUrl !== null) {
-        state.clearSelection();
-        state.emit("link-activate", {
+        state.activateLink({
           url: linkUrl,
           modifiers: {
             ctrl: event.ctrlKey,

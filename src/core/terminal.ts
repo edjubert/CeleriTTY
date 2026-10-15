@@ -49,6 +49,13 @@ import { scrollSensitivity, WheelScroll } from "./wheel-scroll";
 
 type AnyListener = (payload: never) => void;
 
+/**
+ * How long a link click waits for a second click before opening. Browsers do
+ * not expose the system double-click interval; 500 ms is the common default.
+ * Without the wait, the first click of a double click on a URL would open it.
+ */
+const LINK_ACTIVATION_DELAY_MS = 500;
+
 export class Terminal {
   readonly #host: HTMLElement;
   readonly #canvas: HTMLCanvasElement;
@@ -88,6 +95,7 @@ export class Terminal {
   #dragScrollDelta = 0;
   #dragScrollTimer: ReturnType<typeof setInterval> | undefined;
   #hoveredLink: string | null = null;
+  #linkTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly ready: Promise<void>;
 
@@ -203,6 +211,7 @@ export class Terminal {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#stopDragScroll();
+    this.#cancelLinkActivation();
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     safely(this.#observer?.disconnect.bind(this.#observer));
@@ -610,6 +619,14 @@ export class Terminal {
       extendSelection: (event) => this.#updateSelection(this.#selectionPointAt(event)),
       selectionAnchor: this.#selectionAnchor,
       selectionKind: this.#selectionKind,
+      hasSelection: () => this.#selectionStart !== null,
+      activateLink: (link) => {
+        this.#cancelLinkActivation();
+        this.#linkTimer = setTimeout(() => {
+          this.#linkTimer = undefined;
+          this.#emit("link-activate", link);
+        }, LINK_ACTIVATION_DELAY_MS);
+      },
       dirty: this.#dirty,
       setDirty: (v) => {
         this.#dirty = v;
@@ -626,6 +643,9 @@ export class Terminal {
 
   #handleMouseDown(event: MouseEvent): void {
     this.#stopDragScroll();
+    // Any press within the wait makes the pending link click part of a
+    // double click, or a new gesture altogether.
+    this.#cancelLinkActivation();
     handleMouseDown(this.#buildState(), event, toEncoderButton, MOUSE_PRESS);
   }
 
@@ -799,6 +819,11 @@ export class Terminal {
   /** Scroll by `delta` lines during a drag, keeping anchors clamped to the grid. */
   #applyDragScroll(delta: number): number {
     return this.#scrollViewport(delta, true);
+  }
+
+  #cancelLinkActivation(): void {
+    if (this.#linkTimer !== undefined) clearTimeout(this.#linkTimer);
+    this.#linkTimer = undefined;
   }
 
   #stopDragScroll(): void {

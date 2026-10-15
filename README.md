@@ -259,8 +259,10 @@ selects a word, bounded by Alacritty's default separators
 (`` ,│`|:"' ()[]{}<>`` and tab), or up to the matching bracket when clicked on
 one. A triple click selects the whole line, including its soft-wrapped rows.
 Dragging after a double or triple click extends the selection by words or
-lines. Links open on a single click only. Applications that request mouse
-reporting receive clicks instead.
+lines. A link opens on an isolated click that selects nothing:
+`link-activate` fires 500 ms after the release, once no second click has
+started a word selection. Applications that request mouse reporting receive
+clicks instead.
 
 ### Embedding and resizing
 
