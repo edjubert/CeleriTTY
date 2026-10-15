@@ -86,6 +86,30 @@ describe("clearScreen", () => {
     expect(data).not.toHaveBeenCalled();
   });
 
+  it("applies output from a pending synchronized update before clearing", () => {
+    terminal.feed(encode("\x1b[2J\x1b[Hbefore\r\n$ old"));
+    terminal.feed(encode("\x1b[?2026h\r\nresult\r\n$ new"));
+    terminal.clearScreen();
+    terminal.feed(encode("\x1b[?2026l"));
+    expect(rows()).toEqual(["$ new"]);
+  });
+
+  it("sends replies deferred in a synchronized update once, under their policy", () => {
+    const data: string[] = [];
+    terminal.on("data", (bytes) => data.push(new TextDecoder().decode(bytes)));
+    // Live output: the status query is answered when the batch is applied.
+    terminal.feed(encode("\x1b[?2026h\x1b[5n$ "));
+    expect(data).toEqual([]);
+    terminal.clearScreen();
+    expect(data).toEqual(["\x1b[0n"]);
+    terminal.feed(encode("\x1b[?2026l"));
+    expect(data).toEqual(["\x1b[0n"]);
+    // Local writes never reach the process, even when applied by a clear.
+    terminal.write("\x1b[?2026h\x1b[5n");
+    terminal.clearScreen();
+    expect(data).toEqual(["\x1b[0n"]);
+  });
+
   it("leaves a full-screen program's alternate screen alone", () => {
     terminal.feed(encode("\x1b[?1049h\x1b[Hvim buffer"));
     terminal.clearScreen();

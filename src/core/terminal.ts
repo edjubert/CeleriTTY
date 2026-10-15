@@ -390,11 +390,17 @@ export class Terminal {
    */
   clearScreen(): void {
     const engine = this.#requireEngine("clearScreen");
-    if (engine.altScreen) return;
-    engine.clearToCursorLine();
-    this.#clearSelection();
-    this.#wheel.reset();
-    this.#dirty = true;
+    // Output received before the clear must land first: a pending
+    // synchronized batch would otherwise be applied on top of the cleared
+    // grid, and the line kept would be a stale prompt.
+    const deferred = this.#flushSync(true);
+    if (!engine.altScreen) {
+      engine.clearToCursorLine();
+      this.#clearSelection();
+      this.#wheel.reset();
+      this.#dirty = true;
+    }
+    if (deferred !== undefined && deferred.length > 0) this.#emit("data", deferred);
   }
 
   scrollLines(delta: number): void {
