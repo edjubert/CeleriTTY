@@ -5,7 +5,7 @@ use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
-use vte::ansi::{NamedColor, Processor, Rgb, Timeout};
+use vte::ansi::{ClearMode, Handler, NamedColor, Processor, Rgb, Timeout};
 
 use crate::sync_timeout::SyncTimeout;
 
@@ -241,6 +241,34 @@ impl TerminalCore {
     /// Jump back to the live screen.
     pub fn reset_scroll(&mut self) {
         self.term.scroll_display(Scroll::Bottom);
+    }
+
+    /// Clear the scrollback and every row above the cursor's line, which
+    /// becomes the first row — a wrapped line moves whole. This is Cmd+K in
+    /// Terminal.app and iTerm2, and `clear()` in xterm.js: the shell is never
+    /// told, so the prompt it believes it drew must still be on screen, with
+    /// the cursor where the shell left it.
+    ///
+    /// No-op on the alternate screen. That grid belongs to a full-screen
+    /// program that tracks its own contents; erasing it behind the program's
+    /// back only leaves stale cells until its next full redraw.
+    pub fn clear_to_cursor_line(&mut self) {
+        if self.alt_screen() {
+            return;
+        }
+        self.term.scroll_display(Scroll::Bottom);
+        let cursor = self.term.grid().cursor.point;
+        let top = self.term.line_search_left(cursor).line.0.max(0);
+        let screen_lines = self.screen_lines() as i32;
+        let grid = self.term.grid_mut();
+        if top > 0 {
+            // Rows scrolled off the top land in history, cleared just below.
+            grid.scroll_up(&(Line(0)..Line(screen_lines)), top as usize);
+            grid.cursor.point.line -= top;
+            grid.saved_cursor.point.line = Line((grid.saved_cursor.point.line.0 - top).max(0));
+        }
+        // Also marks the grid fully damaged.
+        Handler::clear_screen(&mut self.term, ClearMode::Saved);
     }
 
     /// Set how many lines of scrollback history are kept. Replaces the whole

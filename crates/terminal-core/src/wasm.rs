@@ -272,6 +272,13 @@ impl Terminal {
         self.core.reset_scroll();
     }
 
+    /// Clear the scrollback and the rows above the cursor's line, which
+    /// becomes the first row. No-op on the alternate screen.
+    #[wasm_bindgen(js_name = clearToCursorLine)]
+    pub fn clear_to_cursor_line(&mut self) {
+        self.core.clear_to_cursor_line();
+    }
+
     #[wasm_bindgen(js_name = setScrollbackLines)]
     pub fn set_scrollback_lines(&mut self, lines: usize) {
         self.core.set_scrollback_lines(lines);
