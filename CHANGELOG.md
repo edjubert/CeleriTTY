@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A click no longer leaves a one-cell highlight that looks like a second
+  cursor. A drag covers a cell once the pointer crosses its middle, as in
+  Alacritty, so a click without a drag selects nothing and a single character
+  can be selected.
+
+### Added
+
+- Double click selects a word and triple click selects a line, soft wraps
+  included. Dragging afterwards extends the selection by words or lines.
+  Word boundaries follow Alacritty's defaults. Links open on a single click
+  only.
+
 ## 1.2.4 — 2026-10-13
 
 ### Fixed

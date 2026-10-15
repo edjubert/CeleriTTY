@@ -22,10 +22,12 @@ import {
   handleMouseUp,
   handleWheel,
   resolveLinkUrl,
+  SELECTION_SIMPLE,
+  selectionPointAt,
   sendPointerToEngine,
   shiftCellPoint,
 } from "./input-handlers";
-import type { InputHandlerState } from "./input-handlers";
+import type { InputHandlerState, SelectionKind, SelectionPoint } from "./input-handlers";
 import { computeGridResize, measureSurface } from "./metrics";
 import { buildPaletteOverrides } from "./palette";
 import {
@@ -75,8 +77,13 @@ export class Terminal {
   #transport: TerminalTransport | undefined;
   #transportOff: Array<() => void> = [];
   #transportGeneration = 0;
+  // The highlighted cells, inclusive and in reading order, resolved by the
+  // engine from where the pointer pressed (anchor) and where it is (focus).
   #selectionStart: CellPoint | null = null;
   #selectionEnd: CellPoint | null = null;
+  #selectionAnchor: SelectionPoint | null = null;
+  #selectionFocus: SelectionPoint | null = null;
+  #selectionKind: SelectionKind = SELECTION_SIMPLE;
   #dragging = false;
   #dragScrollDelta = 0;
   #dragScrollTimer: ReturnType<typeof setInterval> | undefined;
@@ -399,8 +406,7 @@ export class Terminal {
     // with it so the highlight stays on the same text. Anchors may leave the
     // viewport — the highlight skips off-screen rows and getSelection still
     // resolves the full text via grid coordinates.
-    this.#selectionStart = shiftCellPoint(this.#selectionStart, -before, this.#grid, false);
-    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, -before, this.#grid, false);
+    this.#shiftSelection(-before, false);
     this.#wheel.reset();
     this.#dirty = true;
   }
@@ -509,6 +515,8 @@ export class Terminal {
     this.#grid = changed;
     this.#selectionStart = clampCellPoint(this.#selectionStart, changed);
     this.#selectionEnd = clampCellPoint(this.#selectionEnd, changed);
+    this.#selectionAnchor = clampCellPoint(this.#selectionAnchor, changed);
+    this.#selectionFocus = clampCellPoint(this.#selectionFocus, changed);
     this.#dirty = true;
     this.#emit("resize", changed);
   }
@@ -594,14 +602,14 @@ export class Terminal {
       setDragging: (v) => {
         this.#dragging = v;
       },
-      selectionStart: this.#selectionStart,
-      setSelectionStart: (v) => {
-        this.#selectionStart = v;
+      beginSelection: (event, kind) => {
+        this.#selectionKind = kind;
+        this.#selectionAnchor = this.#selectionPointAt(event);
+        this.#updateSelection(this.#selectionAnchor);
       },
-      selectionEnd: this.#selectionEnd,
-      setSelectionEnd: (v) => {
-        this.#selectionEnd = v;
-      },
+      extendSelection: (event) => this.#updateSelection(this.#selectionPointAt(event)),
+      selectionAnchor: this.#selectionAnchor,
+      selectionKind: this.#selectionKind,
       dirty: this.#dirty,
       setDirty: (v) => {
         this.#dirty = v;
@@ -714,14 +722,17 @@ export class Terminal {
     }
     // No mousemove event will pin the end anchor while the pointer rests
     // outside the surface, so pin it to the edge the drag is crossing.
-    this.#selectionEnd = clampCellPoint(
-      {
-        line: this.#dragScrollDelta > 0 ? 0 : this.#grid.lines - 1,
-        column: this.#selectionEnd?.column ?? 0,
-      },
-      this.#grid,
+    const focus = this.#selectionFocus;
+    this.#updateSelection(
+      clampCellPoint(
+        {
+          line: this.#dragScrollDelta > 0 ? 0 : this.#grid.lines - 1,
+          column: focus?.column ?? 0,
+          right: focus?.right ?? false,
+        },
+        this.#grid,
+      ),
     );
-    this.#dirty = true;
   }
 
   /**
@@ -742,10 +753,47 @@ export class Terminal {
     engine.scrollLines(delta);
     const moved = engine.displayOffset - before;
     if (moved === 0) return 0;
-    this.#selectionStart = shiftCellPoint(this.#selectionStart, moved, this.#grid, clampLines);
-    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, moved, this.#grid, clampLines);
+    this.#shiftSelection(moved, clampLines);
     this.#dirty = true;
     return moved;
+  }
+
+  /** Move every selection point down by `delta` viewport lines, with the content. */
+  #shiftSelection(delta: number, clampLines: boolean): void {
+    this.#selectionStart = shiftCellPoint(this.#selectionStart, delta, this.#grid, clampLines);
+    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, delta, this.#grid, clampLines);
+    this.#selectionAnchor = shiftCellPoint(this.#selectionAnchor, delta, this.#grid, clampLines);
+    this.#selectionFocus = shiftCellPoint(this.#selectionFocus, delta, this.#grid, clampLines);
+  }
+
+  #selectionPointAt(event: MouseEvent): SelectionPoint | null {
+    const atlas = this.#atlas;
+    return atlas ? selectionPointAt(atlas, this.#surfaceBounds, event, this.#grid) : null;
+  }
+
+  /**
+   * Move the selection's free end to `focus` and let the engine resolve the
+   * covered cells: half-cell sides for a drag, whole words or lines for a
+   * double or triple click. Covering no cell means no selection.
+   */
+  #updateSelection(focus: SelectionPoint | null): void {
+    this.#selectionFocus = focus;
+    const anchor = this.#selectionAnchor;
+    const range =
+      anchor === null || focus === null
+        ? undefined
+        : this.#engine?.selectionRange(
+            this.#selectionKind,
+            anchor.line,
+            anchor.column,
+            anchor.right,
+            focus.line,
+            focus.column,
+            focus.right,
+          );
+    this.#selectionStart = range === undefined ? null : { line: range[0], column: range[1] };
+    this.#selectionEnd = range === undefined ? null : { line: range[2], column: range[3] };
+    this.#dirty = true;
   }
 
   /** Scroll by `delta` lines during a drag, keeping anchors clamped to the grid. */
@@ -760,6 +808,8 @@ export class Terminal {
   }
 
   #clearSelection(): void {
+    this.#selectionAnchor = null;
+    this.#selectionFocus = null;
     if (this.#selectionStart === null && this.#selectionEnd === null) return;
     this.#selectionStart = null;
     this.#selectionEnd = null;

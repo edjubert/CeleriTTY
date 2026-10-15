@@ -10,6 +10,7 @@ const host = document.querySelector<HTMLDivElement>("#terminal")!;
 const errors: string[] = [];
 const replies: number[][] = [];
 let rows: string[] = [];
+let inverse: string[] = [];
 let frames = 0;
 let cell = { width: 1, height: 1 };
 let grid = { columns: 1, lines: 1 };
@@ -31,6 +32,12 @@ const terminal = new Terminal(host, options, async (canvas, atlas) => {
         .join("")
         .trimEnd(),
     );
+    // Cells drawn inverse (selection or cursor), as `line:column`.
+    inverse = [];
+    for (let index = 0; index < value.lines * value.columns; index++) {
+      if (value.packed[index * 4 + 3] & 1)
+        inverse.push(`${Math.floor(index / value.columns)}:${index % value.columns}`);
+    }
     frames++;
     render(value);
   };
@@ -52,7 +59,7 @@ const qa = {
   EngineTerminal,
   feed: (text: string, replyToQueries = true) =>
     terminal.feed(new TextEncoder().encode(text), { replyToQueries }),
-  state: () => ({ rows, frames, cell, grid, errors, replies }),
+  state: () => ({ rows, inverse, frames, cell, grid, errors, replies }),
 };
 declare global {
   interface Window {

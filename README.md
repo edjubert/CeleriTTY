@@ -251,6 +251,17 @@ never both sends application input and scrolls local history. Application
 scroll speed remains the application's policy, including when local
 `scrollSensitivity` is `0`.
 
+### Selection
+
+Selection follows Alacritty's rules. A drag covers a cell once the pointer
+crosses its middle, so a click without a drag selects nothing. A double click
+selects a word, bounded by Alacritty's default separators
+(`` ,│`|:"' ()[]{}<>`` and tab), or up to the matching bracket when clicked on
+one. A triple click selects the whole line, including its soft-wrapped rows.
+Dragging after a double or triple click extends the selection by words or
+lines. Links open on a single click only. Applications that request mouse
+reporting receive clicks instead.
+
 ### Embedding and resizing
 
 Give the host a definite, non-zero content-box size. CeleriTTY sizes its canvas
