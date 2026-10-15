@@ -15,4 +15,4 @@ pub use input::{
     encode_key, encode_mouse, KeyInput, MouseButton, MouseEventKind, MouseInput, MouseReporting,
 };
 pub use snapshot::WORDS_PER_CELL;
-pub use terminal::{TerminalCore, TerminalSize};
+pub use terminal::{SelectionKind, SelectionPoint, TerminalCore, TerminalSize};

@@ -81,22 +81,47 @@ for (const dpr of [1, 2]) {
             ];
             for (const start of positions)
               for (const end of positions) {
-                const point = ([x, y]: number[]) => ({
-                  line: Math.max(
-                    0,
-                    Math.min(lines - 1, Math.floor((y * devicePixelRatio) / state.cell.height)),
-                  ),
-                  column: Math.max(
+                const point = ([x, y]: number[]) => {
+                  const column = Math.max(
                     0,
                     Math.min(columns - 1, Math.floor((x * devicePixelRatio) / state.cell.width)),
-                  ),
-                });
-                const sorted = [point(start), point(end)].sort(
-                  (a, b) => a.line - b.line || a.column - b.column,
-                );
-                const [top, bottom] = sorted;
+                  );
+                  return {
+                    line: Math.max(
+                      0,
+                      Math.min(lines - 1, Math.floor((y * devicePixelRatio) / state.cell.height)),
+                    ),
+                    column,
+                    // Past the right edge counts as the last cell's right half.
+                    right: (x * devicePixelRatio) / state.cell.width - column >= 0.5,
+                  };
+                };
+                // alacritty's simple selection: a cell is covered once the
+                // drag crosses its middle, so a click without one is empty.
+                let [top, bottom] = [point(start), point(end)];
+                if (
+                  top.line > bottom.line ||
+                  (top.line === bottom.line && top.column > bottom.column)
+                )
+                  [top, bottom] = [bottom, top];
+                const samePoint = () => top.line === bottom.line && top.column === bottom.column;
+                const empty =
+                  (samePoint() && top.right === bottom.right) ||
+                  (top.right &&
+                    !bottom.right &&
+                    top.line === bottom.line &&
+                    top.column + 1 === bottom.column);
+                if (!bottom.right && !samePoint()) {
+                  if (bottom.column === 0)
+                    bottom = { ...bottom, line: bottom.line - 1, column: columns - 1 };
+                  else bottom = { ...bottom, column: bottom.column - 1 };
+                }
+                if (top.right && !samePoint()) {
+                  top = { ...top, column: top.column + 1 };
+                  if (top.column === columns) top = { ...top, line: top.line + 1, column: 0 };
+                }
                 const selected: string[] = [];
-                for (let line = top.line; line <= bottom.line; line++) {
+                for (let line = top.line; !empty && line <= bottom.line; line++) {
                   selected.push(
                     state.rows[line]
                       .padEnd(columns, " ")
@@ -158,6 +183,92 @@ for (const dpr of [1, 2]) {
     });
   });
 }
+
+test("real clicks: one selects nothing, two a word, three the line", async ({ page }) => {
+  await page.goto("/browser.html");
+  await page.waitForFunction(() => window.qa?.state().frames > 0);
+  // Hidden cursor: every inverse cell is then selection highlight.
+  await page.evaluate(() =>
+    window.qa.feed("\x1b[?25l\x1b[2J\x1b[Hcd /usr/local/bin && ls\r\nnext", false),
+  );
+  const box = (await page.locator("canvas").boundingBox())!;
+  const { cell } = await page.evaluate(() => window.qa.state());
+  const dpr = await page.evaluate(() => devicePixelRatio);
+  const x = (column: number) => box.x + ((column + 0.5) * cell.width) / dpr;
+  const y = (line: number) => box.y + ((line + 0.5) * cell.height) / dpr;
+  const frame = () =>
+    page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  const read = async () => {
+    await frame();
+    await frame();
+    return page.evaluate(() => ({
+      text: window.qa.terminal.getSelection(),
+      inverse: window.qa.state().inverse,
+    }));
+  };
+
+  await page.mouse.click(x(8), y(0));
+  expect(await read()).toEqual({ text: null, inverse: [] });
+
+  await page.mouse.dblclick(x(8), y(0));
+  const word = await read();
+  expect(word.text).toBe("/usr/local/bin");
+  expect(word.inverse).toEqual(Array.from({ length: 14 }, (_, i) => `0:${i + 3}`));
+
+  await page.mouse.click(x(8), y(0), { clickCount: 3 });
+  expect((await read()).text).toBe("cd /usr/local/bin && ls");
+
+  // A click elsewhere drops the selection and its highlight.
+  await page.mouse.click(x(2), y(1));
+  expect(await read()).toEqual({ text: null, inverse: [] });
+});
+
+test("real link clicks: only an isolated click without a selection opens", async ({ page }) => {
+  await page.goto("/browser.html");
+  await page.waitForFunction(() => window.qa?.state().frames > 0);
+  await page.evaluate(() => {
+    const qa = window.qa as typeof window.qa & { links: string[] };
+    qa.links = [];
+    qa.terminal.on("link-activate", (link) => qa.links.push(link.url));
+    qa.feed("\x1b[?25l\x1b[2J\x1b[H$ cat https://example.com", false);
+  });
+  const box = (await page.locator("canvas").boundingBox())!;
+  const { cell } = await page.evaluate(() => window.qa.state());
+  const dpr = await page.evaluate(() => devicePixelRatio);
+  const x = (column: number) => box.x + (column * cell.width) / dpr;
+  const y = box.y + (0.5 * cell.height) / dpr;
+  const read = () =>
+    page.evaluate(() => ({
+      text: window.qa.terminal.getSelection(),
+      links: (window.qa as typeof window.qa & { links: string[] }).links.length,
+    }));
+  // Longer than the activation wait: a pending link click would have fired.
+  const settle = () => page.waitForTimeout(700);
+
+  await page.mouse.dblclick(x(17.25), y);
+  await settle();
+  expect(await read()).toEqual({ text: "//example.com", links: 0 });
+
+  await page.mouse.click(x(17.25), y, { clickCount: 3 });
+  await settle();
+  expect(await read()).toEqual({ text: "$ cat https://example.com", links: 0 });
+
+  for (const [from, to] of [
+    [17.2, 17.8],
+    [17.8, 17.2],
+  ]) {
+    await page.mouse.move(x(from), y);
+    await page.mouse.down();
+    await page.mouse.move(x(to), y);
+    await page.mouse.up();
+    await settle();
+    expect(await read()).toEqual({ text: "m", links: 0 });
+  }
+
+  await page.mouse.click(x(17.25), y);
+  await settle();
+  expect(await read()).toEqual({ text: null, links: 1 });
+});
 
 test("selection drags past the viewport edges auto-scroll the display", async ({ page }) => {
   await page.goto("/browser.html");

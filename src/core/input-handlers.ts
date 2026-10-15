@@ -9,7 +9,7 @@
 
 import { clampCellPoint } from "./selection-bounds";
 import type { GridSize } from "../renderer/grid-metrics";
-import type { CellPoint } from "./types";
+import type { CellPoint, LinkActivation } from "./types";
 import { MOUSE_SCROLL_UP, MOUSE_SCROLL_DOWN, pointerTarget } from "./pointer";
 import type { WheelScroll } from "./wheel-scroll";
 import { findLinkAtColumn } from "./link-detection";
@@ -24,10 +24,17 @@ export interface InputHandlerState {
   sendPointer: (kind: number, button: number, event: MouseEvent | WheelEvent) => boolean;
   dragging: boolean;
   setDragging: (v: boolean) => void;
-  selectionStart: CellPoint | null;
-  setSelectionStart: (v: CellPoint | null) => void;
-  selectionEnd: CellPoint | null;
-  setSelectionEnd: (v: CellPoint | null) => void;
+  /** Start a selection of `kind` at the pointer, replacing any current one. */
+  beginSelection: (event: MouseEvent, kind: SelectionKind) => void;
+  /** Move the selection's free end to the pointer. */
+  extendSelection: (event: MouseEvent) => void;
+  /** Where the current selection started, and how it grows. */
+  selectionAnchor: CellPoint | null;
+  selectionKind: SelectionKind;
+  /** Whether the current selection covers any cell. */
+  hasSelection: () => boolean;
+  /** Open a link once the click proves not to start a double click. */
+  activateLink: (link: LinkActivation) => void;
   dirty: boolean;
   setDirty: (v: boolean) => void;
   host: { focus: () => void };
@@ -108,6 +115,45 @@ export function computeCellPoint(
   return clampCellPoint(point, grid);
 }
 
+/**
+ * How a selection grows from where it started, as the engine's
+ * `selectionRange` numbers it: cell by cell, by word, or by whole line.
+ */
+export const SELECTION_SIMPLE = 0;
+const SELECTION_WORD = 1;
+const SELECTION_LINE = 2;
+export type SelectionKind = typeof SELECTION_SIMPLE | typeof SELECTION_WORD | typeof SELECTION_LINE;
+
+/** A selection end: a viewport cell, and whether the pointer is over its right half. */
+export interface SelectionPoint extends CellPoint {
+  right: boolean;
+}
+
+/** Double click selects a word, triple click (and beyond) a line. */
+function selectionKindForClick(detail: number): SelectionKind {
+  if (detail >= 3) return SELECTION_LINE;
+  return detail === 2 ? SELECTION_WORD : SELECTION_SIMPLE;
+}
+
+/**
+ * The cell under the pointer for a selection, and whether the pointer is over
+ * its right half. A drag only covers a cell once it crosses the middle, so a
+ * click that never moves selects nothing — as in Alacritty, iTerm2 or
+ * Terminal.app. Past the right edge the last column counts as crossed; past
+ * the left edge the first one does not.
+ */
+export function selectionPointAt(
+  atlas: { cell: { width: number; height: number } },
+  hostBounds: () => DOMRect,
+  event: MouseEvent,
+  grid: GridSize,
+): SelectionPoint | null {
+  const cell = computeCellPoint(atlas, hostBounds, event, grid);
+  if (cell === null) return null;
+  const x = ((event.clientX - hostBounds().left) * window.devicePixelRatio) / atlas.cell.width;
+  return { ...cell, right: x - cell.column >= 0.5 };
+}
+
 /** Get the URL under a pointer position, or `null`. */
 export function resolveLinkUrl(
   engine: InstanceType<typeof EngineTerminal>,
@@ -155,15 +201,16 @@ export function dragAutoScrollLines(
  * because the Rust side converts viewport coordinates to grid coordinates
  * before clamping to the scrollback bounds.
  */
-export function shiftCellPoint(
-  point: CellPoint | null,
+export function shiftCellPoint<P extends CellPoint>(
+  point: P | null,
   delta: number,
   grid: GridSize,
   clampLines = true,
-): CellPoint | null {
+): P | null {
   if (point === null || delta === 0) return point;
   const line = point.line + delta;
   return {
+    ...point,
     line: clampLines ? Math.max(0, Math.min(Math.floor(line), grid.lines - 1)) : Math.floor(line),
     column: Math.max(0, Math.min(Math.floor(point.column), grid.columns - 1)),
   };
@@ -211,10 +258,7 @@ export function handleMouseDown(
   if (state.sendPointer(MOUSE_PRESS, toEncoderButton(event.button), event)) return;
   if (event.button !== 0) return;
   state.setDragging(true);
-  const cell = state.cellAt(event);
-  state.setSelectionStart(cell);
-  state.setSelectionEnd(cell);
-  state.setDirty(true);
+  state.beginSelection(event, selectionKindForClick(event.detail));
 }
 
 export function handleMouseMove(
@@ -226,9 +270,7 @@ export function handleMouseMove(
   previousLink: { current: string | null },
 ): void {
   if (state.dragging) {
-    const cell = state.cellAt(event);
-    state.setSelectionEnd(cell);
-    state.setDirty(true);
+    state.extendSelection(event);
     return;
   }
   if (state.sendPointer(MOUSE_MOVE, event.buttons === 0 ? 0 : 1, event)) return;
@@ -248,19 +290,25 @@ export function handleMouseUp(
 ): void {
   if (state.dragging) {
     state.setDragging(false);
-    const start = state.selectionStart;
+    state.extendSelection(event);
+    const start = state.selectionAnchor;
     const end = state.cellAt(event);
-    state.setSelectionEnd(end);
-    state.setDirty(true);
 
-    const moved =
-      start === null || end === null || start.line !== end.line || start.column !== end.column;
+    // A link opens on a plain click: one that stayed on its cell and selected
+    // nothing. Crossing the middle of a cell selects that character instead,
+    // and a double or triple click selects text.
+    const click =
+      state.selectionKind === SELECTION_SIMPLE &&
+      !state.hasSelection() &&
+      start !== null &&
+      end !== null &&
+      start.line === end.line &&
+      start.column === end.column;
 
-    if (!moved) {
+    if (click) {
       const linkUrl = state.linkAt?.(event);
       if (linkUrl !== undefined && linkUrl !== null) {
-        state.clearSelection();
-        state.emit("link-activate", {
+        state.activateLink({
           url: linkUrl,
           modifiers: {
             ctrl: event.ctrlKey,
