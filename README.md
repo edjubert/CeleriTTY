@@ -276,7 +276,8 @@ not currently supported.
 | `feed(bytes, options?)` | live process output in; parser replies go to `data` / the attached transport. Set `{ replyToQueries: false }` for replayed history |
 | `write(text)` | inject text locally; parser replies are discarded, so it does not reach the process |
 | `setOptions(patch)` | applies live; a colour change does not rebuild the glyph atlas |
-| `focus()` / `blur()` / `clearScreen()` | |
+| `focus()` / `blur()` | |
+| `clearScreen()` | clears the scrollback and the screen but keeps the cursor's line (the prompt) as the first row, like Cmd+K in Terminal.app or iTerm2. Nothing is sent to the process. No-op on the alternate screen |
 | `getSelection()` / `copySelection()` | |
 | `scrollLines(delta)` / `scrollToBottom()` | |
 | `on(event, cb)` | returns an unsubscribe function |
