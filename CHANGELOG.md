@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.5 — 2026-10-19
 
 ### Fixed
 
@@ -8,22 +8,26 @@
   cursor. A drag covers a cell once the pointer crosses its middle, as in
   Alacritty, so a click without a drag selects nothing and a single character
   can be selected.
+  ([#21](https://github.com/edjubert/CeleriTTY/pull/21) by @rle-mino)
 - `clearScreen()` keeps the prompt visible. It clears the scrollback and the
   rows above the cursor's line, which becomes the first row, instead of
   erasing the whole screen behind the shell's back and leaving an empty
   terminal until the next prompt. It no longer touches the alternate screen.
+  ([#20](https://github.com/edjubert/CeleriTTY/pull/20) by @rle-mino)
 
 ### Added
 
 - Double click selects a word and triple click selects a line, soft wraps
   included. Dragging afterwards extends the selection by words or lines.
   Word boundaries follow Alacritty's defaults.
+  ([#21](https://github.com/edjubert/CeleriTTY/pull/21) by @rle-mino)
 
 ### Changed
 
 - `link-activate` fires 500 ms after an isolated click that selects nothing,
   instead of on release. The first click of a double or triple click on a
   URL, or a drag selecting one of its characters, no longer opens it.
+  ([#21](https://github.com/edjubert/CeleriTTY/pull/21) by @rle-mino)
 
 ## 1.2.4 — 2026-10-13
 
