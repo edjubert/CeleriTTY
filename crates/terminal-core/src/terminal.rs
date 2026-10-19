@@ -1,7 +1,8 @@
 //! Drives an `alacritty_terminal` grid from a raw ANSI byte stream.
 
 use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::{Column, Line, Point};
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
 use vte::ansi::{NamedColor, Processor, Rgb, Timeout};
@@ -42,6 +43,25 @@ impl Dimensions for TerminalSize {
     fn columns(&self) -> usize {
         self.columns
     }
+}
+
+/// How a selection grows from where it started: cell by cell (a drag), by
+/// word (a double click) or by whole line (a triple click).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionKind {
+    Simple,
+    Word,
+    Line,
+}
+
+/// One end of a selection: a viewport cell, and whether the pointer is over
+/// its right half. A drag only covers a cell once it crosses the middle, so a
+/// plain click selects nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectionPoint {
+    pub line: i32,
+    pub column: usize,
+    pub right: bool,
 }
 
 /// An ANSI-driven terminal grid: feed it PTY bytes, read cells back.
@@ -260,6 +280,44 @@ impl TerminalCore {
         let start = point(start_line, start_col);
         let end = point(end_line, end_col);
         self.term.bounds_to_string(start.min(end), start.max(end))
+    }
+
+    /// The cells a selection from `anchor` to `focus` covers, as inclusive
+    /// viewport points in reading order — what `selected_text` takes — or
+    /// `None` when it covers no cell.
+    ///
+    /// Delegates to `alacritty_terminal`'s own selection rules: the half-cell
+    /// sides, words bounded by its semantic escape characters (a double click
+    /// on a bracket selects up to its pair), and lines followed across soft
+    /// wraps. Like `selected_text`, points may lie outside the viewport, and
+    /// the result may too.
+    pub fn selection_range(
+        &self,
+        kind: SelectionKind,
+        anchor: SelectionPoint,
+        focus: SelectionPoint,
+    ) -> Option<[(i32, usize); 2]> {
+        let offset = self.display_offset() as i32;
+        let columns = self.columns();
+        let point = |at: SelectionPoint| {
+            let point = Point::new(
+                Line(at.line.saturating_sub(offset)),
+                Column(at.column.min(columns - 1)),
+            );
+            (point, if at.right { Side::Right } else { Side::Left })
+        };
+        let ty = match kind {
+            SelectionKind::Simple => SelectionType::Simple,
+            SelectionKind::Word => SelectionType::Semantic,
+            SelectionKind::Line => SelectionType::Lines,
+        };
+        let (start, side) = point(anchor);
+        let mut selection = Selection::new(ty, start, side);
+        let (end, side) = point(focus);
+        selection.update(end, side);
+        let range = selection.to_range(&self.term)?;
+        let viewport = |point: Point| (point.line.0.saturating_add(offset), point.column.0);
+        Some([viewport(range.start), viewport(range.end)])
     }
 
     /// One viewport row as text, trailing blanks trimmed. Reading aid for

@@ -22,10 +22,12 @@ import {
   handleMouseUp,
   handleWheel,
   resolveLinkUrl,
+  SELECTION_SIMPLE,
+  selectionPointAt,
   sendPointerToEngine,
   shiftCellPoint,
 } from "./input-handlers";
-import type { InputHandlerState } from "./input-handlers";
+import type { InputHandlerState, SelectionKind, SelectionPoint } from "./input-handlers";
 import { computeGridResize, measureSurface } from "./metrics";
 import { buildPaletteOverrides } from "./palette";
 import {
@@ -46,6 +48,13 @@ import { EngineTerminal, encodeKey, engineMemory, loadEngine } from "./wasm";
 import { scrollSensitivity, WheelScroll } from "./wheel-scroll";
 
 type AnyListener = (payload: never) => void;
+
+/**
+ * How long a link click waits for a second click before opening. Browsers do
+ * not expose the system double-click interval; 500 ms is the common default.
+ * Without the wait, the first click of a double click on a URL would open it.
+ */
+const LINK_ACTIVATION_DELAY_MS = 500;
 
 export class Terminal {
   readonly #host: HTMLElement;
@@ -75,12 +84,18 @@ export class Terminal {
   #transport: TerminalTransport | undefined;
   #transportOff: Array<() => void> = [];
   #transportGeneration = 0;
+  // The highlighted cells, inclusive and in reading order, resolved by the
+  // engine from where the pointer pressed (anchor) and where it is (focus).
   #selectionStart: CellPoint | null = null;
   #selectionEnd: CellPoint | null = null;
+  #selectionAnchor: SelectionPoint | null = null;
+  #selectionFocus: SelectionPoint | null = null;
+  #selectionKind: SelectionKind = SELECTION_SIMPLE;
   #dragging = false;
   #dragScrollDelta = 0;
   #dragScrollTimer: ReturnType<typeof setInterval> | undefined;
   #hoveredLink: string | null = null;
+  #linkTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly ready: Promise<void>;
 
@@ -196,6 +211,7 @@ export class Terminal {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#stopDragScroll();
+    this.#cancelLinkActivation();
     cancelAnimationFrame(this.#frame);
     this.#frame = 0;
     safely(this.#observer?.disconnect.bind(this.#observer));
@@ -399,8 +415,7 @@ export class Terminal {
     // with it so the highlight stays on the same text. Anchors may leave the
     // viewport — the highlight skips off-screen rows and getSelection still
     // resolves the full text via grid coordinates.
-    this.#selectionStart = shiftCellPoint(this.#selectionStart, -before, this.#grid, false);
-    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, -before, this.#grid, false);
+    this.#shiftSelection(-before, false);
     this.#wheel.reset();
     this.#dirty = true;
   }
@@ -509,6 +524,8 @@ export class Terminal {
     this.#grid = changed;
     this.#selectionStart = clampCellPoint(this.#selectionStart, changed);
     this.#selectionEnd = clampCellPoint(this.#selectionEnd, changed);
+    this.#selectionAnchor = clampCellPoint(this.#selectionAnchor, changed);
+    this.#selectionFocus = clampCellPoint(this.#selectionFocus, changed);
     this.#dirty = true;
     this.#emit("resize", changed);
   }
@@ -594,13 +611,21 @@ export class Terminal {
       setDragging: (v) => {
         this.#dragging = v;
       },
-      selectionStart: this.#selectionStart,
-      setSelectionStart: (v) => {
-        this.#selectionStart = v;
+      beginSelection: (event, kind) => {
+        this.#selectionKind = kind;
+        this.#selectionAnchor = this.#selectionPointAt(event);
+        this.#updateSelection(this.#selectionAnchor);
       },
-      selectionEnd: this.#selectionEnd,
-      setSelectionEnd: (v) => {
-        this.#selectionEnd = v;
+      extendSelection: (event) => this.#updateSelection(this.#selectionPointAt(event)),
+      selectionAnchor: this.#selectionAnchor,
+      selectionKind: this.#selectionKind,
+      hasSelection: () => this.#selectionStart !== null,
+      activateLink: (link) => {
+        this.#cancelLinkActivation();
+        this.#linkTimer = setTimeout(() => {
+          this.#linkTimer = undefined;
+          this.#emit("link-activate", link);
+        }, LINK_ACTIVATION_DELAY_MS);
       },
       dirty: this.#dirty,
       setDirty: (v) => {
@@ -618,6 +643,9 @@ export class Terminal {
 
   #handleMouseDown(event: MouseEvent): void {
     this.#stopDragScroll();
+    // Any press within the wait makes the pending link click part of a
+    // double click, or a new gesture altogether.
+    this.#cancelLinkActivation();
     handleMouseDown(this.#buildState(), event, toEncoderButton, MOUSE_PRESS);
   }
 
@@ -714,14 +742,17 @@ export class Terminal {
     }
     // No mousemove event will pin the end anchor while the pointer rests
     // outside the surface, so pin it to the edge the drag is crossing.
-    this.#selectionEnd = clampCellPoint(
-      {
-        line: this.#dragScrollDelta > 0 ? 0 : this.#grid.lines - 1,
-        column: this.#selectionEnd?.column ?? 0,
-      },
-      this.#grid,
+    const focus = this.#selectionFocus;
+    this.#updateSelection(
+      clampCellPoint(
+        {
+          line: this.#dragScrollDelta > 0 ? 0 : this.#grid.lines - 1,
+          column: focus?.column ?? 0,
+          right: focus?.right ?? false,
+        },
+        this.#grid,
+      ),
     );
-    this.#dirty = true;
   }
 
   /**
@@ -742,15 +773,57 @@ export class Terminal {
     engine.scrollLines(delta);
     const moved = engine.displayOffset - before;
     if (moved === 0) return 0;
-    this.#selectionStart = shiftCellPoint(this.#selectionStart, moved, this.#grid, clampLines);
-    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, moved, this.#grid, clampLines);
+    this.#shiftSelection(moved, clampLines);
     this.#dirty = true;
     return moved;
+  }
+
+  /** Move every selection point down by `delta` viewport lines, with the content. */
+  #shiftSelection(delta: number, clampLines: boolean): void {
+    this.#selectionStart = shiftCellPoint(this.#selectionStart, delta, this.#grid, clampLines);
+    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, delta, this.#grid, clampLines);
+    this.#selectionAnchor = shiftCellPoint(this.#selectionAnchor, delta, this.#grid, clampLines);
+    this.#selectionFocus = shiftCellPoint(this.#selectionFocus, delta, this.#grid, clampLines);
+  }
+
+  #selectionPointAt(event: MouseEvent): SelectionPoint | null {
+    const atlas = this.#atlas;
+    return atlas ? selectionPointAt(atlas, this.#surfaceBounds, event, this.#grid) : null;
+  }
+
+  /**
+   * Move the selection's free end to `focus` and let the engine resolve the
+   * covered cells: half-cell sides for a drag, whole words or lines for a
+   * double or triple click. Covering no cell means no selection.
+   */
+  #updateSelection(focus: SelectionPoint | null): void {
+    this.#selectionFocus = focus;
+    const anchor = this.#selectionAnchor;
+    const range =
+      anchor === null || focus === null
+        ? undefined
+        : this.#engine?.selectionRange(
+            this.#selectionKind,
+            anchor.line,
+            anchor.column,
+            anchor.right,
+            focus.line,
+            focus.column,
+            focus.right,
+          );
+    this.#selectionStart = range === undefined ? null : { line: range[0], column: range[1] };
+    this.#selectionEnd = range === undefined ? null : { line: range[2], column: range[3] };
+    this.#dirty = true;
   }
 
   /** Scroll by `delta` lines during a drag, keeping anchors clamped to the grid. */
   #applyDragScroll(delta: number): number {
     return this.#scrollViewport(delta, true);
+  }
+
+  #cancelLinkActivation(): void {
+    if (this.#linkTimer !== undefined) clearTimeout(this.#linkTimer);
+    this.#linkTimer = undefined;
   }
 
   #stopDragScroll(): void {
@@ -760,6 +833,8 @@ export class Terminal {
   }
 
   #clearSelection(): void {
+    this.#selectionAnchor = null;
+    this.#selectionFocus = null;
     if (this.#selectionStart === null && this.#selectionEnd === null) return;
     this.#selectionStart = null;
     this.#selectionEnd = null;

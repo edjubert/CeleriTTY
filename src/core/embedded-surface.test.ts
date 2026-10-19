@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   engines: [] as Array<{
     resize: ReturnType<typeof vi.fn>;
     selectedText: ReturnType<typeof vi.fn>;
+    selectionRange: ReturnType<typeof vi.fn>;
   }>,
   observers: [] as Array<{
     callback: ResizeObserverCallback;
@@ -27,6 +28,17 @@ vi.mock("./wasm", () => ({
     readonly altScreen = false;
     readonly resize = vi.fn();
     readonly selectedText = vi.fn(() => "selection");
+    // Echo the pointer cells back as the covered range.
+    readonly selectionRange = vi.fn(
+      (
+        _kind: number,
+        line: number,
+        column: number,
+        _right: boolean,
+        toLine: number,
+        toColumn: number,
+      ) => [line, column, toLine, toColumn],
+    );
     constructor() {
       mocks.engines.push(this);
     }
@@ -178,6 +190,8 @@ describe("embedded terminal surface", () => {
         bubbles: true,
       }),
     );
+    const right = expect.any(Boolean);
+    expect(mocks.engines[0].selectionRange).toHaveBeenLastCalledWith(0, 1, 4, right, 1, 4, right);
     expect(terminal.getSelection()).toBe("selection");
     expect(mocks.engines[0].selectedText).toHaveBeenLastCalledWith(1, 4, 1, 4);
     terminal.dispose();

@@ -8,7 +8,7 @@ use vte::ansi::Rgb;
 use crate::input::{
     encode_key, encode_mouse, KeyInput, MouseButton, MouseEventKind, MouseInput, MouseReporting,
 };
-use crate::terminal::{TerminalCore, TerminalSize};
+use crate::terminal::{SelectionKind, SelectionPoint, TerminalCore, TerminalSize};
 
 /// Assemble a `KeyInput` from the flat arguments `wasm_bindgen` can pass.
 /// Extracted so the conversion is testable without a JS runtime.
@@ -204,6 +204,45 @@ impl Terminal {
     ) -> String {
         self.core
             .selected_text(start_line, start_col, end_line, end_col)
+    }
+
+    /// The cells a selection covers, as `[startLine, startColumn, endLine,
+    /// endColumn]` — inclusive viewport points ready for `selectedText` — or
+    /// `undefined` when it covers none.
+    ///
+    /// `kind`: 0 cell by cell, 1 by word, 2 by line. Each end is a viewport
+    /// cell plus whether the pointer is over its right half.
+    #[wasm_bindgen(js_name = selectionRange)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn selection_range(
+        &self,
+        kind: u8,
+        anchor_line: i32,
+        anchor_col: usize,
+        anchor_right: bool,
+        focus_line: i32,
+        focus_col: usize,
+        focus_right: bool,
+    ) -> Option<Vec<i32>> {
+        let kind = match kind {
+            0 => SelectionKind::Simple,
+            1 => SelectionKind::Word,
+            2 => SelectionKind::Line,
+            _ => return None,
+        };
+        let anchor = SelectionPoint {
+            line: anchor_line,
+            column: anchor_col,
+            right: anchor_right,
+        };
+        let focus = SelectionPoint {
+            line: focus_line,
+            column: focus_col,
+            right: focus_right,
+        };
+        let [start, end] = self.core.selection_range(kind, anchor, focus)?;
+        // Columns are below the grid width, which wasm32 caps far below i32::MAX.
+        Some(vec![start.0, start.1 as i32, end.0, end.1 as i32])
     }
 
     /// One zero-based viewport row as text. Debugging aid — renderers use `snapshotPtr` and
