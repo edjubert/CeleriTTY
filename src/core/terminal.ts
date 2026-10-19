@@ -398,8 +398,25 @@ export class Terminal {
     if (this.#host.ownerDocument.activeElement === this.#host) this.#host.blur();
   }
 
+  /**
+   * Clear the scrollback and the screen, keeping the cursor's line — the
+   * shell prompt — as the first row, like Cmd+K in Terminal.app or iTerm2.
+   * The process is not told: a shell keeps editing its prompt in place.
+   * Does nothing on the alternate screen, which a full-screen program owns.
+   */
   clearScreen(): void {
-    this.write("\x1b[2J\x1b[H");
+    const engine = this.#requireEngine("clearScreen");
+    // Output received before the clear must land first: a pending
+    // synchronized batch would otherwise be applied on top of the cleared
+    // grid, and the line kept would be a stale prompt.
+    const deferred = this.#flushSync(true);
+    if (!engine.altScreen) {
+      engine.clearToCursorLine();
+      this.#clearSelection();
+      this.#wheel.reset();
+      this.#dirty = true;
+    }
+    if (deferred !== undefined && deferred.length > 0) this.#emit("data", deferred);
   }
 
   scrollLines(delta: number): void {

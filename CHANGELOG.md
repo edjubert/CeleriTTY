@@ -8,6 +8,10 @@
   cursor. A drag covers a cell once the pointer crosses its middle, as in
   Alacritty, so a click without a drag selects nothing and a single character
   can be selected.
+- `clearScreen()` keeps the prompt visible. It clears the scrollback and the
+  rows above the cursor's line, which becomes the first row, instead of
+  erasing the whole screen behind the shell's back and leaving an empty
+  terminal until the next prompt. It no longer touches the alternate screen.
 
 ### Added
 
