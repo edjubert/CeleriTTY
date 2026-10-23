@@ -420,7 +420,7 @@ export class Terminal {
   }
 
   scrollLines(delta: number): void {
-    this.#scrollViewport(delta, false);
+    this.#scrollViewport(delta);
     this.#wheel.reset();
   }
 
@@ -432,7 +432,7 @@ export class Terminal {
     // with it so the highlight stays on the same text. Anchors may leave the
     // viewport — the highlight skips off-screen rows and getSelection still
     // resolves the full text via grid coordinates.
-    this.#shiftSelection(-before, false);
+    this.#shiftSelection(-before);
     this.#wheel.reset();
     this.#dirty = true;
   }
@@ -719,7 +719,7 @@ export class Terminal {
       event,
       MOUSE_SCROLL_UP,
       MOUSE_SCROLL_DOWN,
-      (delta) => this.#scrollViewport(delta, false),
+      (delta) => this.#scrollViewport(delta),
     );
   }
 
@@ -744,7 +744,7 @@ export class Terminal {
       this.#stopDragScroll();
       return;
     }
-    this.#applyDragScroll(delta);
+    this.#scrollViewport(delta);
     this.#dragScrollDelta = delta;
     if (this.#dragScrollTimer === undefined) {
       this.#dragScrollTimer = setInterval(() => this.#dragScrollTick(), 50);
@@ -752,7 +752,7 @@ export class Terminal {
   }
 
   #dragScrollTick(): void {
-    const moved = this.#applyDragScroll(this.#dragScrollDelta);
+    const moved = this.#scrollViewport(this.#dragScrollDelta);
     if (moved === 0) {
       this.#stopDragScroll();
       return;
@@ -778,29 +778,29 @@ export class Terminal {
    * scrolling up (positive delta) pushes content down, so anchors shift down
    * by the number of lines actually moved. Returns the effective movement.
    *
-   * When `clampLines` is false (wheel scroll), anchors may leave the viewport
-   * — the highlight skips off-screen rows and getSelection still resolves the
-   * full text. When true (drag auto-scroll), anchors stay clamped to the grid
-   * because the pointer is physically at the edge.
+   * Anchors may leave the viewport, including during drag auto-scroll: the
+   * selection must keep its original start even after it scrolls off-screen.
+   * The highlight skips off-screen rows and getSelection resolves the full
+   * text. Only the pointer's free end is clamped to the viewport edge.
    */
-  #scrollViewport(delta: number, clampLines: boolean): number {
+  #scrollViewport(delta: number): number {
     const engine = this.#engine;
     if (engine === undefined || delta === 0) return 0;
     const before = engine.displayOffset;
     engine.scrollLines(delta);
     const moved = engine.displayOffset - before;
     if (moved === 0) return 0;
-    this.#shiftSelection(moved, clampLines);
+    this.#shiftSelection(moved);
     this.#dirty = true;
     return moved;
   }
 
   /** Move every selection point down by `delta` viewport lines, with the content. */
-  #shiftSelection(delta: number, clampLines: boolean): void {
-    this.#selectionStart = shiftCellPoint(this.#selectionStart, delta, this.#grid, clampLines);
-    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, delta, this.#grid, clampLines);
-    this.#selectionAnchor = shiftCellPoint(this.#selectionAnchor, delta, this.#grid, clampLines);
-    this.#selectionFocus = shiftCellPoint(this.#selectionFocus, delta, this.#grid, clampLines);
+  #shiftSelection(delta: number): void {
+    this.#selectionStart = shiftCellPoint(this.#selectionStart, delta, this.#grid, false);
+    this.#selectionEnd = shiftCellPoint(this.#selectionEnd, delta, this.#grid, false);
+    this.#selectionAnchor = shiftCellPoint(this.#selectionAnchor, delta, this.#grid, false);
+    this.#selectionFocus = shiftCellPoint(this.#selectionFocus, delta, this.#grid, false);
   }
 
   #selectionPointAt(event: MouseEvent): SelectionPoint | null {
@@ -831,11 +831,6 @@ export class Terminal {
     this.#selectionStart = range === undefined ? null : { line: range[0], column: range[1] };
     this.#selectionEnd = range === undefined ? null : { line: range[2], column: range[3] };
     this.#dirty = true;
-  }
-
-  /** Scroll by `delta` lines during a drag, keeping anchors clamped to the grid. */
-  #applyDragScroll(delta: number): number {
-    return this.#scrollViewport(delta, true);
   }
 
   #cancelLinkActivation(): void {

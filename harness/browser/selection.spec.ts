@@ -371,6 +371,75 @@ test("selection drags past the viewport edges auto-scroll the display", async ({
   expect(label(linesDown[0])).toBe(label(result.beforeDown[result.startRowDown]));
 });
 
+for (const direction of ["up", "down"] as const) {
+  test(`a held selection drag ${direction} keeps its starting text beyond two viewports`, async ({
+    page,
+  }) => {
+    await page.goto("/browser.html");
+    await page.waitForFunction(() => window.qa?.state().frames > 0);
+    const start = await page.evaluate(async (direction) => {
+      const { qa } = window;
+      const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      qa.host.style.height = "129.2px";
+      await frame();
+      await frame();
+      qa.feed(
+        "\x1b[?25l\x1b[2J\x1b[H" +
+          Array.from({ length: 60 }, (_, i) => `R${String(i).padStart(3, "0")}`).join("\r\n"),
+      );
+      if (direction === "down") qa.terminal.scrollLines(40);
+      await frame();
+      await frame();
+      const state = qa.state();
+      const box = qa.host.querySelector("canvas")!.getBoundingClientRect();
+      const row = Math.floor(state.grid.lines / 2);
+      const width = state.cell.width / devicePixelRatio;
+      const height = state.cell.height / devicePixelRatio;
+      return {
+        lines: state.grid.lines,
+        top: Number(state.rows[0].slice(1)),
+        anchor: Number(state.rows[row].slice(1)),
+        x: box.left + (direction === "up" ? 4.25 : 0.25) * width,
+        y: box.top + (row + 0.5) * height,
+        endX: box.left + (direction === "up" ? 0.25 : 4.25) * width,
+        endY: direction === "up" ? box.top - 2 * height : box.bottom + 2 * height,
+      };
+    }, direction);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.endX, start.endY);
+    try {
+      await expect
+        .poll(async () => {
+          const top = await page.evaluate(() => Number(window.qa.state().rows[0].slice(1)));
+          return direction === "up" ? start.top - top : top - start.top;
+        })
+        .toBeGreaterThanOrEqual(2 * start.lines);
+    } finally {
+      await page.mouse.up();
+    }
+
+    const result = await page.evaluate(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      return {
+        text: window.qa.terminal.getSelection(),
+        rows: window.qa.state().rows,
+        errors: window.qa.errors,
+      };
+    });
+    const first = direction === "up" ? Number(result.rows[0].slice(1)) : start.anchor;
+    const last =
+      direction === "up" ? start.anchor : Number(result.rows[result.rows.length - 1].slice(1));
+    const expected = Array.from(
+      { length: last - first + 1 },
+      (_, i) => `R${String(first + i).padStart(3, "0")}`,
+    ).join("\n");
+    expect(last - first + 1).toBeGreaterThan(2 * start.lines);
+    expect(result.text).toBe(expected);
+    expect(result.errors).toEqual([]);
+  });
+}
+
 for (const routing of ["explicit", "wheel"] as const) {
   test(`selection stays anchored during ${routing} scrolling`, async ({ page }) => {
     await page.goto("/browser.html");

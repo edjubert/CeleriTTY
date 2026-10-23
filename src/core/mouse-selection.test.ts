@@ -216,4 +216,54 @@ describe("mouse selection", () => {
     terminal.scrollToBottom();
     expect(terminal.getSelection()).toBe("second");
   });
+
+  describe("drag auto-scroll beyond one viewport", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      terminal.feed(
+        new TextEncoder().encode(
+          "\x1b[2J\x1b[H" +
+            Array.from({ length: 30 }, (_, i) => `R${String(i).padStart(3, "0")}`).join("\r\n"),
+        ),
+      );
+    });
+    afterEach(() => vi.useRealTimers());
+
+    for (const direction of ["up", "down"] as const) {
+      it.each(["mousemove", "timer"] as const)(
+        `keeps the original anchor and copies all selected lines when scrolling ${direction} via %s`,
+        async (source) => {
+          const changes: Array<string | null> = [];
+          terminal.on("selection-change", (text) => changes.push(text));
+          const writeText = vi.fn().mockResolvedValue(undefined);
+          vi.spyOn(navigator.clipboard, "writeText").mockImplementation(writeText);
+          if (direction === "down") terminal.scrollLines(20);
+          press(at(2, direction === "up" ? 4 : 0));
+          const outside = direction === "up" ? at(-1, 0) : at(6, 4);
+          move(outside);
+          if (source === "timer") {
+            vi.advanceTimersByTime(400);
+          } else {
+            for (let i = 0; i < 8; i++) move(outside);
+          }
+          release(outside);
+
+          // Twelve or thirteen selected rows span more than two six-row viewports.
+          const [first, last] = direction === "up" ? [15, 26] : [6, 18];
+          const expected = Array.from(
+            { length: last - first + 1 },
+            (_, i) => `R${String(first + i).padStart(3, "0")}`,
+          ).join("\n");
+          expect(terminal.getSelection()).toBe(expected);
+          expect(changes).toEqual([expected]);
+          await terminal.copySelection();
+          expect(writeText).toHaveBeenCalledExactlyOnceWith(expected);
+
+          // Releasing outside the viewport stops scrolling and preserves the text.
+          vi.advanceTimersByTime(200);
+          expect(terminal.getSelection()).toBe(expected);
+        },
+      );
+    }
+  });
 });

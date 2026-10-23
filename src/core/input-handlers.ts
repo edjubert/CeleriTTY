@@ -194,8 +194,7 @@ export function dragAutoScrollLines(
  * the content.
  *
  * When `clampLines` is true (the default), the result is clamped inside the
- * grid — used by resize and drag auto-scroll where the anchor must stay
- * visible. When false, the line may go negative or past the last row: the
+ * grid. When false, the line may go negative or past the last row: the
  * selection then extends outside the viewport and `applySelectionHighlight`
  * simply skips those rows. `getSelection` still resolves the full text
  * because the Rust side converts viewport coordinates to grid coordinates
