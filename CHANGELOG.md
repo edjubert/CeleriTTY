@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.6 — 2026-10-23
+
+### Fixed
+
+- Selection drags that auto-scroll beyond the viewport keep their original
+  anchor, so copying includes all selected text, including off-screen rows.
+  This works in both scroll directions and while the pointer rests outside
+  the terminal.
+
 ## 1.2.5 — 2026-10-19
 
 ### Fixed
