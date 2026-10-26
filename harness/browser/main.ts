@@ -57,6 +57,9 @@ const qa = {
   errors,
   replies,
   EngineTerminal,
+  Terminal,
+  createWebGpuRenderer,
+  options,
   feed: (text: string, replyToQueries = true) =>
     terminal.feed(new TextEncoder().encode(text), { replyToQueries }),
   state: () => ({ rows, inverse, frames, cell, grid, errors, replies }),

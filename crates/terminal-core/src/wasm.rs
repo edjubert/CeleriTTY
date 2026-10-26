@@ -162,10 +162,12 @@ impl Terminal {
     }
 
     /// Rewrite the packed grid buffer. Call once per frame, before reading the
-    /// snapshot pointer.
+    /// snapshot pointer. An optional local cursor gate defaults to true; it
+    /// never overrides the application's SHOW_CURSOR mode.
     #[wasm_bindgen(js_name = refreshSnapshot)]
-    pub fn refresh_snapshot(&mut self) {
-        self.core.refresh_snapshot();
+    pub fn refresh_snapshot(&mut self, cursor_visible: Option<bool>) {
+        self.core
+            .refresh_snapshot_with_cursor(cursor_visible.unwrap_or(true));
     }
 
     /// Offset of the packed grid inside the module's linear memory.
