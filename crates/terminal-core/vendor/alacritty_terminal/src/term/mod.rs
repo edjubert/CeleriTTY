@@ -1800,15 +1800,20 @@ impl<T: EventListener> Handler for Term<T> {
         trace!("Requested write of escape sequence for color code {prefix}: color[{index}]");
 
         let terminator = terminator.to_owned();
-        self.event_proxy.send_event(Event::ColorRequest(
-            index,
-            Arc::new(move |color| {
-                format!(
-                    "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
-                    prefix, color.r, color.g, color.b, terminator
-                )
-            }),
-        ));
+        let formatter = move |color: Rgb| {
+            format!(
+                "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+                prefix, color.r, color.g, color.b, terminator
+            )
+        };
+        // Resolve OSC overrides at the query's position in the stream. The
+        // listener only owns theme defaults; deferring this until after parsing
+        // would observe later color mutations and reorder replies around CSI.
+        let event = match self.colors[index] {
+            Some(color) => Event::PtyWrite(formatter(color)),
+            None => Event::ColorRequest(index, Arc::new(formatter)),
+        };
+        self.event_proxy.send_event(event);
     }
 
     /// Reset the indexed color to original value.

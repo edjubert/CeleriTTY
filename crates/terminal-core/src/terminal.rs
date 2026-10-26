@@ -5,7 +5,7 @@ use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
-use vte::ansi::{ClearMode, Handler, NamedColor, Processor, Rgb, Timeout};
+use vte::ansi::{ClearMode, Handler, Processor, Rgb, Timeout};
 
 use crate::sync_timeout::SyncTimeout;
 
@@ -74,10 +74,6 @@ pub struct TerminalCore {
     packed: Vec<u32>,
     /// Flat `(line, left, right)` triplets, refilled by `take_damage`.
     damage: Vec<u32>,
-    /// The theme's foreground, background, and cursor colors, in that order.
-    /// The host knows the theme, not the parser — OSC 10/11/12 queries are
-    /// answered from here.
-    named_colors: [Option<Rgb>; 3],
 }
 
 impl TerminalCore {
@@ -91,14 +87,14 @@ impl TerminalCore {
             parser: Processor::new(),
             packed: vec![0; cells * WORDS_PER_CELL],
             damage: Vec::new(),
-            named_colors: [None; 3],
         }
     }
 
-    /// Store the theme's named colors. Called once at startup, before any PTY
-    /// output can contain a query.
+    /// Store the theme's named colors at startup and whenever the host changes
+    /// them. Explicit OSC overrides still take precedence until reset.
     pub fn set_named_colors(&mut self, foreground: Rgb, background: Rgb, cursor: Rgb) {
-        self.named_colors = [Some(foreground), Some(background), Some(cursor)];
+        self.pty_output
+            .set_named_colors(foreground, background, cursor);
     }
 
     /// Feed a chunk of PTY output. The parser keeps its state across calls, so
@@ -108,25 +104,6 @@ impl TerminalCore {
         // user input or reset_scroll should return it to the live screen.
         self.flush_sync(false);
         self.parser.advance(&mut self.term, bytes);
-        self.answer_color_requests();
-    }
-
-    /// Resolve queued OSC color queries (10/11/12, and 4;index;?) into reply
-    /// bytes. Only the named colors are answered: the ANSI palette belongs to
-    /// the renderer and no query has arrived for it in practice, so an index
-    /// without a stored color stays silent rather than inventing one.
-    fn answer_color_requests(&mut self) {
-        for (index, formatter) in self.pty_output.take_color_requests() {
-            let Some(color) = self.term.colors()[index].or_else(|| match index {
-                i if i == NamedColor::Foreground as usize => self.named_colors[0],
-                i if i == NamedColor::Background as usize => self.named_colors[1],
-                i if i == NamedColor::Cursor as usize => self.named_colors[2],
-                _ => None,
-            }) else {
-                continue;
-            };
-            self.pty_output.push(formatter(color).as_bytes());
-        }
     }
 
     /// Apply an expired synchronized update, including when no new PTY data
@@ -573,6 +550,104 @@ mod tests {
         // and the reply formatter echoes each channel twice.
         core.feed(b"\x1b]11;?\x07");
         assert_eq!(core.take_output(), b"\x1b]11;rgb:1111/3333/5555\x07");
+    }
+
+    /// Drain after each read, as the host does. Include every two-chunk split
+    /// and one-byte reads so correctness cannot depend on PTY packetization.
+    fn assert_replies_at_every_boundary(input: &[u8], expected: &[u8]) {
+        for split in 0..=input.len() {
+            let mut core = core_with_theme();
+            core.feed(&input[..split]);
+            let mut output = core.take_output();
+            core.feed(&input[split..]);
+            output.extend(core.take_output());
+            assert_eq!(output, expected, "split at {split}");
+            assert!(core.take_output().is_empty());
+        }
+        let mut core = core_with_theme();
+        let mut output = Vec::new();
+        for byte in input {
+            core.feed(std::slice::from_ref(byte));
+            output.extend(core.take_output());
+        }
+        assert_eq!(output, expected, "one-byte reads");
+    }
+
+    #[test]
+    fn osc_and_csi_replies_keep_request_order_at_every_boundary() {
+        for terminator in ["\x07", "\x1b\\"] {
+            for (code, rgb) in [
+                (10, "c0c0/c0c0/c0c0"),
+                (11, "1e1e/1e1e/2e2e"),
+                (12, "ffff/ffff/ffff"),
+            ] {
+                let input = format!(
+                    "\x1b[5n\x1b]{code};?{terminator}\x1b[6n\x1b]{code};?{terminator}\x1b[5n"
+                );
+                let expected = format!(
+                    "\x1b[0n\x1b]{code};rgb:{rgb}{terminator}\x1b[1;1R\x1b]{code};rgb:{rgb}{terminator}\x1b[0n"
+                );
+                assert_replies_at_every_boundary(input.as_bytes(), expected.as_bytes());
+            }
+        }
+    }
+
+    #[test]
+    fn color_queries_observe_mutations_and_resets_in_stream_order() {
+        // Both named and indexed colors: unknown palette entries stay silent,
+        // explicit overrides answer, and reset restores the host's theme.
+        assert_replies_at_every_boundary(
+            b"\x1b]11;?\x07\x1b]11;#113355\x07\x1b[6n\x1b]11;?\x07\x1b]111\x07\x1b]11;?\x07\x1b]4;2;?;2;#224466;2;?\x07\x1b]104;2\x07\x1b]4;2;?\x07\x1b[5n",
+            b"\x1b]11;rgb:1e1e/1e1e/2e2e\x07\x1b[1;1R\x1b]11;rgb:1111/3333/5555\x07\x1b]11;rgb:1e1e/1e1e/2e2e\x07\x1b]4;2;rgb:2222/4444/6666\x07\x1b[0n",
+        );
+    }
+
+    #[test]
+    fn compound_named_color_queries_keep_their_order_with_csi_replies() {
+        assert_replies_at_every_boundary(
+            b"\x1b]10;?;?;?\x07\x1b[6n",
+            b"\x1b]10;rgb:c0c0/c0c0/c0c0\x07\x1b]11;rgb:1e1e/1e1e/2e2e\x07\x1b]12;rgb:ffff/ffff/ffff\x07\x1b[1;1R",
+        );
+    }
+
+    #[test]
+    fn color_replies_use_updated_theme_defaults_but_keep_osc_overrides() {
+        let mut core = TerminalCore::new(TerminalSize {
+            columns: 20,
+            screen_lines: 5,
+        });
+        core.feed(b"\x1b]11;?\x07\x1b]11;#113355\x07\x1b]11;?\x07\x1b]111\x07");
+        assert_eq!(core.take_output(), b"\x1b]11;rgb:1111/3333/5555\x07");
+
+        let color = Rgb { r: 8, g: 9, b: 11 };
+        core.set_named_colors(color, color, color);
+        core.feed(b"\x1b]11;?\x1b\\\x1b[6n");
+        let updated = Rgb { r: 1, g: 2, b: 3 };
+        core.set_named_colors(updated, updated, updated);
+        core.feed(b"\x1b]11;?\x07");
+        assert_eq!(
+            core.take_output(),
+            b"\x1b]11;rgb:0808/0909/0b0b\x1b\\\x1b[1;1R\x1b]11;rgb:0101/0202/0303\x07"
+        );
+    }
+
+    #[test]
+    fn synchronized_color_replies_keep_order_on_end_and_forced_flush() {
+        let queries = b"\x1b]11;?\x1b\\\x1b[6n\x1b]11;#113355\x07\x1b]11;?\x07";
+        let expected = b"\x1b]11;rgb:1e1e/1e1e/2e2e\x1b\\\x1b[1;1R\x1b]11;rgb:1111/3333/5555\x07";
+        let mut input = b"\x1b[?2026h".to_vec();
+        input.extend(queries);
+        input.extend(b"\x1b[?2026l");
+        assert_replies_at_every_boundary(&input, expected);
+
+        let mut core = core_with_theme();
+        core.feed(b"\x1b[?2026h");
+        core.feed(queries);
+        assert!(core.take_output().is_empty());
+        assert!(core.flush_sync(true));
+        assert_eq!(core.take_output(), expected);
+        core.feed(b"\x1b[5n");
+        assert_eq!(core.take_output(), b"\x1b[0n");
     }
 
     #[test]

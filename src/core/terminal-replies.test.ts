@@ -189,6 +189,22 @@ describe("terminal protocol replies", () => {
 });
 
 describe("synchronized query policies", () => {
+  it("discards mixed replay replies at a policy boundary and preserves live query order", () => {
+    const output: string[] = [];
+    terminal.on("data", (bytes) => output.push(decode(bytes)));
+    const queries = "\x1b]11;?\x1b\\\x1b[6n";
+    const reply = "\x1b]11;rgb:1a1a/1b1b/2626\x1b\\\x1b[1;1R";
+
+    terminal.feed(encode(`\x1b[?2026h${queries}`), { replyToQueries: false });
+    terminal.feed(encode(queries));
+    expect(output).toEqual([reply]);
+    terminal.feed(encode(`\x1b[?2026h${queries}`));
+    terminal.write(queries);
+    expect(output).toEqual([reply, reply]);
+    terminal.feed(encode("ordinary output"));
+    expect(output).toEqual([reply, reply]);
+  });
+
   it("finishes deferred replay queries silently before switching to live output", () => {
     const output: string[] = [];
     terminal.on("data", (bytes) => output.push(decode(bytes)));

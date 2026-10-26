@@ -37,6 +37,14 @@ copy is used purely as an in-browser ANSI-to-grid engine.
    the last grid row with no next row to read. Selection then reflects the
    existing row, without fabricating a wrapped glyph. Covered by native and real-WASM browser selection regressions.
 
+5. `src/term/mod.rs` — `dynamic_color_sequence` resolves explicit OSC color
+   overrides immediately as `PtyWrite`, leaving only theme defaults to the
+   `ColorRequest` listener. This preserves the color at the query's position
+   in the stream, including changes and resets within one parser call or
+   synchronized batch. The CeleriTTY listener answers defaults synchronously
+   so OSC replies cannot be overtaken by later CSI replies. Covered by native
+   and real-WASM query-order regressions.
+
 The remaining terminal/grid behavior is unchanged.
 
 ### Upgrading
