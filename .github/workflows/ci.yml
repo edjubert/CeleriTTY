@@ -21,6 +21,10 @@ jobs:
       # 0.9.1, which predates workspace inheritance and cannot parse
       # license.workspace = true in the crate manifests.
       - uses: jetli/wasm-pack-action@v0.4.0
+        # The installer renames into ~/.cargo/bin. Extract on the same
+        # filesystem to avoid EXDEV on hosted runners with a separate /tmp.
+        env:
+          TMPDIR: ${{ env.CARGO_HOME }}
         with:
           version: "v0.15.0"
 
@@ -73,6 +77,9 @@ jobs:
       # 0.9.1, which predates workspace inheritance and cannot parse
       # license.workspace = true in the crate manifests.
       - uses: jetli/wasm-pack-action@v0.4.0
+        # Match the destination filesystem for the installer's rename.
+        env:
+          TMPDIR: ${{ env.CARGO_HOME }}
         with:
           version: "v0.15.0"
       - uses: pnpm/action-setup@v4
