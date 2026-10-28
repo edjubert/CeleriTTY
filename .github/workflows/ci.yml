@@ -21,6 +21,10 @@ jobs:
       # 0.9.1, which predates workspace inheritance and cannot parse
       # license.workspace = true in the crate manifests.
       - uses: jetli/wasm-pack-action@v0.4.0
+        # The installer renames into ~/.cargo/bin. Extract on the same
+        # filesystem to avoid EXDEV on hosted runners with a separate /tmp.
+        env:
+          TMPDIR: ${{ env.CARGO_HOME }}
         with:
           version: "v0.15.0"
 
@@ -61,7 +65,8 @@ jobs:
         run: pnpm knip
 
   browser:
-    runs-on: ubuntu-latest
+    # Playwright 1.58.2 supports Ubuntu 24.04, not the newer ubuntu-latest.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -73,6 +78,9 @@ jobs:
       # 0.9.1, which predates workspace inheritance and cannot parse
       # license.workspace = true in the crate manifests.
       - uses: jetli/wasm-pack-action@v0.4.0
+        # Match the destination filesystem for the installer's rename.
+        env:
+          TMPDIR: ${{ env.CARGO_HOME }}
         with:
           version: "v0.15.0"
       - uses: pnpm/action-setup@v4
