@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0 — TBD
+
+### Added
+- Enhanced feature #735 (feature-feature-735-348e)
+
 ## 1.2.6 — 2026-10-23
 
 ### Fixed
