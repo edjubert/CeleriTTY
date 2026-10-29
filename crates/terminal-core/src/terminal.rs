@@ -345,13 +345,19 @@ impl TerminalCore {
     /// Writes in place — no allocation on the render path. Call once per frame,
     /// before reading `snapshot`.
     pub fn refresh_snapshot(&mut self) {
+        self.refresh_snapshot_with_cursor(true);
+    }
+
+    /// Apply a local presentation gate without changing the application's
+    /// SHOW_CURSOR mode. Unfocused views can hide the cursor independently.
+    pub fn refresh_snapshot_with_cursor(&mut self, cursor_visible: bool) {
         let columns = self.term.columns();
         let lines = self.term.screen_lines();
         let grid = self.term.grid();
         // The cursor is not a grid cell: alacritty keeps it in `grid().cursor`
         // and leaves drawing it to the renderer. Captured here, applied below.
         let cursor = grid.cursor.point;
-        let show_cursor = self.term.mode().contains(TermMode::SHOW_CURSOR);
+        let show_cursor = cursor_visible && self.term.mode().contains(TermMode::SHOW_CURSOR);
 
         let mut index = 0;
         for line in 0..lines {

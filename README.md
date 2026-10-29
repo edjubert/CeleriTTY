@@ -199,6 +199,12 @@ Call `term.focus()` to focus that native surface with `preventScroll`. The host
 remains the only tab stop, and mounting or revealing another terminal never
 moves focus on its own. Do not add a second hidden input around CeleriTTY.
 
+The block cursor is visible only while the terminal has focus in a visible,
+focused document. Moving focus between split panes or to another field refreshes
+the cursor on the next animation frame, without waiting for process output.
+Returning focus restores it only if the application allows it (`SHOW_CURSOR`);
+local focus changes never send DECTCEM sequences to the process.
+
 `Meta`-modified keys remain available to the embedding application's shortcut
 system. Product-specific mappings such as Cmd+Arrow to readline commands still
 belong in the host; composition keystrokes never escape to those handlers.

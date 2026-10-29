@@ -72,6 +72,8 @@ export class Terminal {
   #atlas: GlyphAtlas | undefined;
   #observer: ResizeObserver | undefined;
   #unbindInput: (() => void) | undefined;
+  #unbindFocus: (() => void) | undefined;
+  #cursorVisible = false;
   #unbindRendererDiagnostic: (() => void) | undefined;
   #unbindRendererError: (() => void) | undefined;
   #textInput: NativeTextInput | undefined;
@@ -202,6 +204,7 @@ export class Terminal {
       onMouseMove: (event) => this.#handleMouseMove(event),
       onWheel: (event) => this.#handleWheel(event),
     });
+    this.#unbindFocus = this.#bindFocus();
 
     this.#remeasure();
     this.#frame = requestAnimationFrame(() => this.#draw());
@@ -218,6 +221,8 @@ export class Terminal {
     this.#observer = undefined;
     safely(this.#unbindInput);
     this.#unbindInput = undefined;
+    safely(this.#unbindFocus);
+    this.#unbindFocus = undefined;
     safely(this.#unbindRendererError);
     this.#unbindRendererError = undefined;
     safely(this.#unbindRendererDiagnostic);
@@ -395,7 +400,8 @@ export class Terminal {
 
   blur(): void {
     this.#textInput?.blur();
-    if (this.#host.ownerDocument.activeElement === this.#host) this.#host.blur();
+    const root = this.#host.getRootNode() as Document | ShadowRoot;
+    if (root.activeElement === this.#host) this.#host.blur();
   }
 
   /**
@@ -460,6 +466,55 @@ export class Terminal {
 
   // --------------------------------------------------------------- internals
 
+  #bindFocus(): () => void {
+    const host = this.#host;
+    const document = host.ownerDocument;
+    const view = document.defaultView;
+    // activeElement usually stays on the textarea when the browser loses
+    // focus. Track window focus separately so that stale DOM focus cannot
+    // leave an active cursor in a background window.
+    let windowFocused = document.hasFocus();
+    const update = (): void => {
+      const root = host.getRootNode() as Document | ShadowRoot;
+      const visible =
+        windowFocused && document.visibilityState !== "hidden" && host.contains(root.activeElement);
+      if (visible === this.#cursorVisible) return;
+      this.#cursorVisible = visible;
+      this.#dirty = true;
+    };
+    const focusIn = (): void => {
+      windowFocused = document.hasFocus();
+      update();
+    };
+    const windowFocus = (): void => {
+      windowFocused = true;
+      update();
+    };
+    const windowBlur = (): void => {
+      windowFocused = false;
+      update();
+    };
+    const visibilityChange = (): void => {
+      windowFocused = document.hasFocus();
+      update();
+    };
+    // focusin/out include the nested native textarea and direct DOM focus,
+    // rather than relying on callers to use Terminal.focus()/blur().
+    host.addEventListener("focusin", focusIn);
+    host.addEventListener("focusout", update);
+    view?.addEventListener("focus", windowFocus);
+    view?.addEventListener("blur", windowBlur);
+    document.addEventListener("visibilitychange", visibilityChange);
+    update();
+    return () => {
+      host.removeEventListener("focusin", focusIn);
+      host.removeEventListener("focusout", update);
+      view?.removeEventListener("focus", windowFocus);
+      view?.removeEventListener("blur", windowBlur);
+      document.removeEventListener("visibilitychange", visibilityChange);
+    };
+  }
+
   #flushSync(force: boolean): Uint8Array | undefined {
     const engine = this.#engine;
     if (!this.#syncPending || engine === undefined || !engine.flushSync(force)) return;
@@ -482,7 +537,7 @@ export class Terminal {
       const replies = this.#flushSync(false);
       if (this.#dirty) {
         try {
-          engine.refreshSnapshot();
+          engine.refreshSnapshot(this.#cursorVisible);
           const packed = new Uint32Array(
             engineMemory(),
             engine.snapshotPtr(),
