@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.1 — 2026-10-29
+
+### Fixed
+
+- The block cursor is shown only in the focused terminal pane, in a visible,
+  focused document. Focus changes redraw it without waiting for process output
+  and preserve the application's cursor visibility mode.
+  ([#22](https://github.com/edjubert/CeleriTTY/pull/22) by @rle-mino)
+- Terminal color queries and cursor-position reports are answered in request
+  order, including across PTY chunks and synchronized-output batches. OSC color
+  queries use the color at their position in the stream, preventing `gh` color
+  responses from leaking into the shell prompt.
+  ([#23](https://github.com/edjubert/CeleriTTY/pull/23) by @rle-mino)
+
+### Internal
+
+- Remove duplicate environment mappings introduced while merging the CI
+  workflows, and use Ubuntu 24.04 for both CI jobs.
+
+## 1.3.0 — 2026-10-28
+
+- Published the 1.2.6 code base under version 1.3.0, with no terminal behavior
+  changes.
+
 ## 1.2.6 — 2026-10-23
 
 ### Fixed
