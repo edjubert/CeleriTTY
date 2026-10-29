@@ -27,9 +27,6 @@ jobs:
           TMPDIR: ${{ env.CARGO_HOME }}
         with:
           version: "v0.15.0"
-        env:
-          # The installer renames into ~/.cargo/bin; stay on the same volume.
-          TMPDIR: ${{ env.CARGO_HOME }}
 
       - uses: pnpm/action-setup@v4
 
@@ -86,9 +83,6 @@ jobs:
           TMPDIR: ${{ env.CARGO_HOME }}
         with:
           version: "v0.15.0"
-        env:
-          # The installer renames into ~/.cargo/bin; stay on the same volume.
-          TMPDIR: ${{ env.CARGO_HOME }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
