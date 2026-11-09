@@ -68,8 +68,6 @@ jobs:
     # Keep the browser runner on a Playwright-supported Ubuntu release.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -93,7 +91,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Install software GPU and debugger test applications
-        run: sudo apt-get install -y --no-install-recommends fish neovim mesa-vulkan-drivers vulkan-tools
+        run: |
+          sudo apt-get install -y --no-install-recommends fish neovim mesa-vulkan-drivers vulkan-tools
+          # Mesa 25 removed the architecture suffix from its ICD manifest names.
+          vulkan_driver_manifest="$(dpkg -L mesa-vulkan-drivers | rg '/lvp_icd[^/]*\.json$')"
+          test -f "$vulkan_driver_manifest"
+          printf 'VK_DRIVER_FILES=%s\n' "$vulkan_driver_manifest" >> "$GITHUB_ENV"
       - name: Native Vulkan driver diagnostics
         run: xvfb-run -a vulkaninfo --summary
       - name: Real WASM and WebGPU browser regressions
