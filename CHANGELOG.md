@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.3.2 — 2026-11-09
+
+### Fixed
+
+- Render the block, beam and underline cursor shapes requested by applications
+  through DECSCUSR, including Neovim and Fish Vi modes. Cursor blinking and the
+  configured `TerminalOptions.cursor` defaults now work, with live `setOptions`
+  updates and application overrides taking precedence until reset.
+- Draw the cursor independently of inverse text and selection attributes, using
+  the configured cursor color. All shapes respect terminal focus, application
+  visibility, scrollback and wide-character positioning.
+
+### Added
+
+- A contributor debugger launched with `pnpm debug`, embedding the current
+  terminal source with a real local PTY. It includes shell selection, live
+  appearance controls, ANSI cursor previews, Alacritty TOML loading, optional
+  byte tracing and downloadable diagnostic reports.
+
+### Internal
+
+- Add Rust cursor-protocol tests, GPU pixel assertions at two device pixel ratios,
+  and debugger regressions covering shell lifecycle, Fish and Neovim when
+  installed. CI runs the debugger suite alongside the browser regressions.
+- Use Chromium's Metal backend for macOS browser tests so screenshots reflect
+  actual WebGPU output.
+
 ## 1.3.1 — 2026-10-29
 
 ### Fixed
