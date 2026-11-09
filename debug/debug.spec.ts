@@ -82,7 +82,7 @@ test("Fish Vi modes send block, beam and underline through the live session", as
   await expect(page.locator("#status")).toHaveText("Shell connected");
   await page.locator("#terminal textarea").focus();
   await page.keyboard.type(
-    "fish_vi_key_bindings; set -g fish_cursor_default block; set -g fish_cursor_insert line; set -g fish_cursor_visual underscore",
+    "set -g fish_vi_force_cursor 1; fish_vi_key_bindings; set -g fish_cursor_default block; set -g fish_cursor_insert line; set -g fish_cursor_visual underscore",
   );
   await page.keyboard.press("Enter");
   await expect(page.locator("#effective-cursor")).toHaveText("beam");

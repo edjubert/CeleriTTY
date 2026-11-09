@@ -314,6 +314,10 @@ Neovim's `guicursor` controls which shape it sends for each mode. Its default
 normal and visual modes both use a block; a distinct visual cursor requires a
 corresponding `guicursor` entry.
 
+Older Fish versions only change cursor shapes in recognized terminals. Set
+`fish_vi_force_cursor` before enabling `fish_vi_key_bindings` to test a custom
+terminal; the [debugger guide](debug/README.md#fish-vi-modes) includes a recipe.
+
 ## Transport
 
 ```ts

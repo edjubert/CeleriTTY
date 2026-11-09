@@ -49,6 +49,7 @@ sends its own cursor sequences.
 Select Fish, start it, then run:
 
 ```fish
+set -g fish_vi_force_cursor 1
 fish_vi_key_bindings
 set -g fish_cursor_default block
 set -g fish_cursor_insert line
@@ -57,6 +58,8 @@ set -g fish_cursor_visual underscore
 
 Type a few characters; use Escape for normal mode, `i` for insertion and `v`
 for visual mode. Add `blink` to a variable value to enable blinking.
+The force flag enables cursor updates in older Fish versions that do not
+recognize a custom terminal. Set it before enabling the Vi bindings.
 
 ### Neovim modes
 
