@@ -68,6 +68,8 @@ jobs:
     # Keep the browser runner on a Playwright-supported Ubuntu release.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -90,10 +92,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Install interactive debugger test applications
+        run: sudo apt-get install -y --no-install-recommends fish neovim mesa-vulkan-drivers
       - name: Real WASM and WebGPU browser regressions
         env:
           DEBUG: pw:browser
-        run: pnpm test:browser
+        run: pnpm test:browser --max-failures=1
       - name: Contributor debugger and local PTY regressions
         run: pnpm test:debug
       - uses: actions/upload-artifact@v4

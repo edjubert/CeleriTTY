@@ -16,11 +16,12 @@ export default defineConfig({
         ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
         ...(process.platform === "linux"
           ? [
-              "--use-angle=swiftshader",
-              "--enable-unsafe-swiftshader",
-              // Linux needs a Dawn compositor to share software WebGPU canvases.
-              "--enable-skia-graphite",
-              "--skia-graphite-dawn-backend=swiftshader",
+              // Use one Vulkan device for ANGLE, Skia and WebGPU canvas backing.
+              "--use-angle=vulkan",
+              "--use-vulkan=native",
+              "--enable-features=Vulkan,VulkanFromANGLE",
+              "--disable-vulkan-surface",
+              "--ignore-gpu-blocklist",
             ]
           : []),
       ],

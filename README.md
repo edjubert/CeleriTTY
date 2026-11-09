@@ -398,9 +398,11 @@ Browser regressions require a WebGPU-capable Chromium and exercise the built
 `dist/index.js` with the real WASM and renderer, without a backend server.
 The `browser` CI job runs these regressions headlessly on pull requests and
 main-branch pushes, using Chromium's software WebGPU adapter when needed.
-Run `pnpm test:browser --headed` for visually inspectable GPU captures (some
-headless GPU backends capture blank canvases). Results and screenshots are
-kept in `test-results/`.
+Cursor pixel assertions read the rendered GPU texture directly, so their
+results do not depend on headless compositor screenshots. A separate test
+checks native WebGPU canvas rendering and readback before exercising the
+terminal. Results, failure screenshots and GPU diagnostics are kept in
+`test-results/`. CI also installs Fish and Neovim for the debugger regressions.
 
 | Path | Contents |
 |---|---|
