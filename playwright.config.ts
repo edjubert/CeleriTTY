@@ -15,7 +15,13 @@ export default defineConfig({
         "--enable-unsafe-webgpu",
         ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
         ...(process.platform === "linux"
-          ? ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+          ? [
+              "--use-angle=swiftshader",
+              "--enable-unsafe-swiftshader",
+              // Linux needs a Dawn compositor to share software WebGPU canvases.
+              "--enable-skia-graphite",
+              "--skia-graphite-dawn-backend=swiftshader",
+            ]
           : []),
       ],
     },
