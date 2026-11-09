@@ -91,6 +91,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: Real WASM and WebGPU browser regressions
+        env:
+          DEBUG: pw:browser
         run: pnpm test:browser
       - name: Contributor debugger and local PTY regressions
         run: pnpm test:debug
