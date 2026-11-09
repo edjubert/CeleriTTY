@@ -3,7 +3,7 @@
 
 use wasm_bindgen::prelude::*;
 
-use vte::ansi::Rgb;
+use vte::ansi::{CursorShape, Rgb};
 
 use crate::input::{
     encode_key, encode_mouse, KeyInput, MouseButton, MouseEventKind, MouseInput, MouseReporting,
@@ -120,6 +120,28 @@ impl Terminal {
     #[wasm_bindgen(getter, js_name = cursorColumn)]
     pub fn cursor_column(&self) -> usize {
         self.core.cursor_column()
+    }
+
+    /// Default cursor style; DECSCUSR from the application takes precedence.
+    #[wasm_bindgen(js_name = setCursorStyle)]
+    pub fn set_cursor_style(&mut self, shape: &str, blinking: bool) -> Result<(), JsError> {
+        let shape = match shape {
+            "block" => CursorShape::Block,
+            "beam" => CursorShape::Beam,
+            "underline" => CursorShape::Underline,
+            _ => {
+                return Err(JsError::new(
+                    "Cursor style must be block, beam, or underline",
+                ))
+            }
+        };
+        self.core.set_cursor_style(shape, blinking);
+        Ok(())
+    }
+
+    #[wasm_bindgen(getter, js_name = cursorBlinking)]
+    pub fn cursor_blinking(&self) -> bool {
+        self.core.cursor_blinking()
     }
 
     /// Whether DECCKM is on. Feed this back into `encodeKey` so the arrow keys

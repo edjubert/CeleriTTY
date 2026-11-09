@@ -3,14 +3,13 @@
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
-use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
-use vte::ansi::{ClearMode, Handler, Processor, Rgb, Timeout};
+use vte::ansi::{ClearMode, CursorShape, CursorStyle, Handler, Processor, Rgb, Timeout};
 
 use crate::sync_timeout::SyncTimeout;
 
 use crate::pty_output::PtyOutput;
-use crate::snapshot::{encode_color, WORDS_PER_CELL};
+use crate::snapshot::{encode_color, CURSOR_BEAM, CURSOR_BLOCK, CURSOR_UNDERLINE, WORDS_PER_CELL};
 
 /// Viewport dimensions, in cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +66,7 @@ pub struct SelectionPoint {
 /// An ANSI-driven terminal grid: feed it PTY bytes, read cells back.
 pub struct TerminalCore {
     term: Term<PtyOutput>,
+    config: Config,
     pty_output: PtyOutput,
     parser: Processor<SyncTimeout>,
     /// Reused across frames: rewritten in place by `refresh_snapshot` so no
@@ -81,8 +81,10 @@ impl TerminalCore {
         let size = size.clamped();
         let cells = size.columns * size.screen_lines;
         let pty_output = PtyOutput::default();
+        let config = Config::default();
         Self {
-            term: Term::new(Config::default(), &size, pty_output.clone()),
+            term: Term::new(config.clone(), &size, pty_output.clone()),
+            config,
             pty_output,
             parser: Processor::new(),
             packed: vec![0; cells * WORDS_PER_CELL],
@@ -153,6 +155,23 @@ impl TerminalCore {
     /// Cursor column, 0-indexed.
     pub fn cursor_column(&self) -> usize {
         self.term.grid().cursor.point.column.0
+    }
+
+    /// Configure the fallback used before an application selects a cursor,
+    /// and after DECSCUSR 0 or a terminal reset. Application overrides win.
+    pub fn set_cursor_style(&mut self, shape: CursorShape, blinking: bool) {
+        self.config.default_cursor_style = CursorStyle { shape, blinking };
+        self.term.set_options(self.config.clone());
+    }
+
+    /// Hidden and off-screen cursors need no blink redraws.
+    pub fn cursor_blinking(&self) -> bool {
+        let content = self.term.renderable_content();
+        let line = content.cursor.point.line.0 + content.display_offset as i32;
+        self.term.cursor_style().blinking
+            && content.cursor.shape != CursorShape::Hidden
+            && line >= 0
+            && line < self.screen_lines() as i32
     }
 
     /// Whether DECCKM (application cursor keys) is enabled. The renderer reads
@@ -248,15 +267,10 @@ impl TerminalCore {
         Handler::clear_screen(&mut self.term, ClearMode::Saved);
     }
 
-    /// Set how many lines of scrollback history are kept. Replaces the whole
-    /// `Config` — safe today because nothing else in it is customized
-    /// (`Config::default()` is used everywhere else in this crate); revisit
-    /// if a future change starts customizing another `Config` field.
+    /// Set history capacity without resetting the configured cursor style.
     pub fn set_scrollback_lines(&mut self, lines: usize) {
-        self.term.set_options(Config {
-            scrolling_history: lines,
-            ..Config::default()
-        });
+        self.config.scrolling_history = lines;
+        self.term.set_options(self.config.clone());
     }
 
     /// Text between two viewport points, inclusive. Convert viewport
@@ -354,10 +368,9 @@ impl TerminalCore {
         let columns = self.term.columns();
         let lines = self.term.screen_lines();
         let grid = self.term.grid();
-        // The cursor is not a grid cell: alacritty keeps it in `grid().cursor`
-        // and leaves drawing it to the renderer. Captured here, applied below.
-        let cursor = grid.cursor.point;
-        let show_cursor = cursor_visible && self.term.mode().contains(TermMode::SHOW_CURSOR);
+        // Use alacritty's renderable cursor, including hidden state and the
+        // leading cell of a wide character, rather than its raw grid cursor.
+        let cursor = self.term.renderable_content().cursor;
 
         let mut index = 0;
         for line in 0..lines {
@@ -372,16 +385,21 @@ impl TerminalCore {
             }
         }
 
-        // Marking the cursor cell INVERSE paints a block cursor with the shader
-        // path that already swaps foreground and background — no extra draw
-        // call, no second pipeline. Toggled, not set: on a cell already inverse
-        // from SGR 7, setting the flag is a no-op and the cursor vanishes.
-        if show_cursor {
-            let line = usize::try_from(cursor.line.0).unwrap_or(0) + grid.display_offset();
-            let column = cursor.column.0;
-            if line < lines && column < columns {
+        // Preserve SGR/selection attributes; the shader paints the cursor
+        // independently using the shape selected by DECSCUSR.
+        let cursor_flag = match cursor.shape {
+            CursorShape::Block | CursorShape::HollowBlock => CURSOR_BLOCK,
+            CursorShape::Beam => CURSOR_BEAM,
+            CursorShape::Underline => CURSOR_UNDERLINE,
+            CursorShape::Hidden => 0,
+        };
+        if cursor_visible && cursor_flag != 0 {
+            let line = cursor.point.line.0 + grid.display_offset() as i32;
+            let column = cursor.point.column.0;
+            if line >= 0 && (line as usize) < lines && column < columns {
+                let line = line as usize;
                 let flags = (line * columns + column) * WORDS_PER_CELL + 3;
-                self.packed[flags] ^= u32::from(Flags::INVERSE.bits());
+                self.packed[flags] |= cursor_flag;
             }
         }
     }
@@ -657,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cursor_cell_is_marked_inverse_so_the_shader_paints_a_block() {
+    fn the_cursor_shape_is_marked_without_changing_text_attributes() {
         let mut core = TerminalCore::new(TerminalSize {
             columns: 4,
             screen_lines: 1,
@@ -665,15 +683,14 @@ mod tests {
         core.feed(b"ab");
         core.refresh_snapshot();
 
-        let inverse = u32::from(Flags::INVERSE.bits());
         let flags_of = |cell: usize| core.snapshot()[cell * WORDS_PER_CELL + 3];
         // Cursor sits on column 2, just past the typed text.
         assert_eq!(
-            flags_of(2) & inverse,
-            inverse,
-            "cursor cell must be inverse"
+            flags_of(2),
+            CURSOR_BLOCK,
+            "cursor cell must carry the default block marker"
         );
-        assert_eq!(flags_of(0) & inverse, 0, "other cells must be untouched");
+        assert_eq!(flags_of(0), 0, "other cells must be untouched");
     }
 
     #[test]
@@ -686,9 +703,8 @@ mod tests {
         core.feed(b"ab\x1b[?25l");
         core.refresh_snapshot();
 
-        let inverse = u32::from(Flags::INVERSE.bits());
         for cell in 0..4 {
-            assert_eq!(core.snapshot()[cell * WORDS_PER_CELL + 3] & inverse, 0);
+            assert_eq!(core.snapshot()[cell * WORDS_PER_CELL + 3], 0);
         }
     }
 

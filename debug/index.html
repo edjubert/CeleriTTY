@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CeleriTTY debug</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">CONTRIBUTOR TOOLS</p>
+        <h1>CeleriTTY debug</h1>
+        <p class="subtitle">
+          A real shell, live appearance controls, and the terminal's actual rendered cursor.
+        </p>
+      </div>
+      <span id="status" role="status">Starting renderer…</span>
+    </header>
+    <main>
+      <section class="session card" aria-label="Shell session">
+        <label
+          >Shell
+          <select id="shell" aria-label="Shell"></select
+        ></label>
+        <label class="checkbox"
+          ><input id="clean" type="checkbox" checked /> Skip shell configuration</label
+        >
+        <button id="start" disabled>Start shell</button>
+        <button id="stop" disabled>Stop shell</button>
+        <span id="cwd" class="muted"></span>
+      </section>
+      <div class="workspace">
+        <section class="terminal-card card" aria-label="Embedded terminal">
+          <div class="terminal-heading">
+            <span id="session-title">Cursor playground</span>
+            <button id="focus" disabled>Focus terminal</button>
+          </div>
+          <div id="terminal"></div>
+          <div class="readouts" aria-live="polite">
+            <span>Rendered cursor <strong id="effective-cursor">—</strong></span>
+            <span>Phase <strong id="cursor-phase">—</strong></span>
+            <span>Grid <strong id="grid">—</strong></span>
+            <span>DPR <strong id="dpr">—</strong></span>
+          </div>
+        </section>
+        <aside class="card controls" aria-label="Terminal options">
+          <h2>Appearance</h2>
+          <label
+            >Default cursor
+            <select id="cursor">
+              <option value="block">Block</option>
+              <option value="beam">Beam</option>
+              <option value="underline">Underline</option>
+            </select>
+          </label>
+          <label class="checkbox"><input id="blink" type="checkbox" /> Blink</label>
+          <label>Cursor color <input id="cursor-color" type="color" value="#e5e5e5" /></label>
+          <label
+            >Theme
+            <select id="theme" aria-label="Theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+          <label>Font family <input id="font-family" value="monospace" /></label>
+          <label
+            >Font size <input id="font-size" type="number" min="8" max="48" value="15"
+          /></label>
+          <label class="file-label"
+            >Load Alacritty TOML <input id="config-file" type="file" accept=".toml"
+          /></label>
+          <p class="hint">
+            These are defaults. Fish, Neovim, and other programs can override the cursor.
+          </p>
+          <h2>ANSI playground</h2>
+          <p class="hint">
+            Available when the shell is stopped. Test application overrides independently of your
+            configuration.
+          </p>
+          <div class="preview-buttons">
+            <button data-sequence="2">Block</button>
+            <button data-sequence="6">Beam</button>
+            <button data-sequence="4">Underline</button>
+            <button data-sequence="0">Restore default</button>
+            <button id="hide-cursor">Hide / show</button>
+          </div>
+        </aside>
+      </div>
+      <section class="card recipes" aria-label="Manual test recipes">
+        <h2>Try a real application</h2>
+        <p>Start Fish, then paste this to distinguish its Vi modes:</p>
+        <pre><code>fish_vi_key_bindings
+set -g fish_cursor_default block
+set -g fish_cursor_insert line
+set -g fish_cursor_visual underscore</code></pre>
+        <p>Or run <code>nvim -u NONE -i NONE -n</code> and configure its modes:</p>
+        <pre><code>:set guicursor=n-c:block-blinkon0,i:ver25-blinkon0,v:hor20-blinkon0</code></pre>
+        <p class="hint">
+          Type text, then switch with Escape, i, and v. Neovim normally uses the same block in
+          normal and visual modes.
+        </p>
+      </section>
+      <details class="card diagnostics" open>
+        <summary>
+          Diagnostics <span id="traffic" class="muted">RX 0 B · TX 0 B · 0 frames</span>
+        </summary>
+        <div class="diagnostic-controls">
+          <label class="checkbox"><input id="trace" type="checkbox" /> Trace PTY bytes</label>
+          <button id="clear-log">Clear log</button>
+          <button id="report">Download report</button>
+        </div>
+        <pre id="log" role="log" aria-label="Diagnostic log"></pre>
+      </details>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

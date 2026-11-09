@@ -48,7 +48,7 @@ export class TerminalRenderer implements Renderer {
     this.#atlas = atlas;
 
     this.#uniformBuffer = device.createBuffer({
-      size: 4 * BYTES_PER_FLOAT,
+      size: 8 * BYTES_PER_FLOAT,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.#paletteBuffer = device.createBuffer({
@@ -223,6 +223,10 @@ export class TerminalRenderer implements Renderer {
         grid.lines,
         cell.width / canvas.width,
         cell.height / canvas.height,
+        Math.max(1, Math.round(cell.width * 0.15)) / cell.width,
+        Math.max(1, Math.round(cell.width * 0.15)) / cell.height,
+        grid.cursorVisible !== false ? 1 : 0,
+        0,
       ]),
     );
 

@@ -80,8 +80,7 @@ fn history_eviction_and_resize_keep_viewport_valid() {
 #[test]
 fn cursor_moves_with_viewport_and_disappears_outside_it() {
     let mut core = terminal();
-    // Inverse is the renderer's block-cursor marker (also an SGR attribute).
-    let inverse = alacritty_terminal::term::cell::Flags::INVERSE.bits() as u32;
+    let cursor = terminal_core::snapshot::CURSOR_MASK;
     core.feed(b"\x1b[1;1H");
     core.scroll_lines(1);
     core.refresh_snapshot();
@@ -89,7 +88,7 @@ fn cursor_moves_with_viewport_and_disappears_outside_it() {
         .snapshot()
         .chunks(WORDS_PER_CELL)
         .enumerate()
-        .filter_map(|(i, cell)| (cell[3] & inverse != 0).then_some(i))
+        .filter_map(|(i, cell)| (cell[3] & cursor != 0).then_some(i))
         .collect();
     assert_eq!(marked, [12]);
     core.feed(b"\x1b[3;1H");
@@ -97,10 +96,10 @@ fn cursor_moves_with_viewport_and_disappears_outside_it() {
     assert!(core
         .snapshot()
         .chunks(WORDS_PER_CELL)
-        .all(|cell| cell[3] & inverse == 0));
+        .all(|cell| cell[3] & cursor == 0));
     core.reset_scroll();
     core.refresh_snapshot();
-    assert_ne!(core.snapshot()[24 * WORDS_PER_CELL + 3] & inverse, 0);
+    assert_ne!(core.snapshot()[24 * WORDS_PER_CELL + 3] & cursor, 0);
 }
 
 #[test]

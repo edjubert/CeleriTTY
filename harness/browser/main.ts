@@ -11,6 +11,8 @@ const errors: string[] = [];
 const replies: number[][] = [];
 let rows: string[] = [];
 let inverse: string[] = [];
+let cursor: { line: number; column: number; shape: string } | null = null;
+let cursorVisible = true;
 let frames = 0;
 let cell = { width: 1, height: 1 };
 let grid = { columns: 1, lines: 1 };
@@ -32,11 +34,23 @@ const terminal = new Terminal(host, options, async (canvas, atlas) => {
         .join("")
         .trimEnd(),
     );
-    // Cells drawn inverse (selection or cursor), as `line:column`.
+    // Inverse text/selection cells and independent cursor shape markers.
     inverse = [];
+    cursor = null;
+    cursorVisible = value.cursorVisible !== false;
     for (let index = 0; index < value.lines * value.columns; index++) {
-      if (value.packed[index * 4 + 3] & 1)
-        inverse.push(`${Math.floor(index / value.columns)}:${index % value.columns}`);
+      const flags = value.packed[index * 4 + 3];
+      if (flags & 1) inverse.push(`${Math.floor(index / value.columns)}:${index % value.columns}`);
+      const shape =
+        flags & (1 << 16)
+          ? "block"
+          : flags & (1 << 17)
+            ? "beam"
+            : flags & (1 << 18)
+              ? "underline"
+              : null;
+      if (shape !== null)
+        cursor = { line: Math.floor(index / value.columns), column: index % value.columns, shape };
     }
     frames++;
     render(value);
@@ -62,7 +76,7 @@ const qa = {
   options,
   feed: (text: string, replyToQueries = true) =>
     terminal.feed(new TextEncoder().encode(text), { replyToQueries }),
-  state: () => ({ rows, inverse, frames, cell, grid, errors, replies }),
+  state: () => ({ rows, inverse, cursor, cursorVisible, frames, cell, grid, errors, replies }),
 };
 declare global {
   interface Window {

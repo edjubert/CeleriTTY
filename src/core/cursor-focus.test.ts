@@ -81,11 +81,11 @@ async function mount(parent: Node = document.body, focusBeforeReady = false) {
   return { host, input, terminal, renderer };
 }
 
-function inverse(renderer: FakeRenderer): number[] {
+function marked(renderer: FakeRenderer, mask = 0x70000): number[] {
   const packed = renderer.frames.at(-1)!.packed;
   const cells = [];
   for (let index = 3; index < packed.length; index += 4) {
-    if (packed[index] & 1) cells.push((index - 3) / 4);
+    if (packed[index] & mask) cells.push((index - 3) / 4);
   }
   return cells;
 }
@@ -97,31 +97,31 @@ describe("cursor presentation follows actual focus", () => {
     const data = vi.fn();
     a.terminal.on("data", data);
     b.terminal.on("data", data);
-    expect(inverse(a.renderer)).toEqual([]);
-    expect(inverse(b.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
+    expect(marked(b.renderer)).toEqual([]);
 
     a.terminal.focus();
     tick();
     expect(document.activeElement).toBe(a.input);
-    expect(inverse(a.renderer)).toEqual([0]);
-    expect(inverse(b.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([0]);
+    expect(marked(b.renderer)).toEqual([]);
     const before = a.renderer.frames.length;
     a.terminal.blur();
     b.terminal.focus();
     tick();
     expect(document.activeElement).toBe(b.input);
     expect(a.renderer.frames.length).toBe(before + 1);
-    expect(inverse(a.renderer)).toEqual([]);
-    expect(inverse(b.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([]);
+    expect(marked(b.renderer)).toEqual([0]);
 
     a.terminal.write("");
     b.terminal.write("");
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
-    expect(inverse(b.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([]);
+    expect(marked(b.renderer)).toEqual([0]);
     b.terminal.blur();
     tick();
-    expect(inverse(b.renderer)).toEqual([]);
+    expect(marked(b.renderer)).toEqual([]);
     expect(data).not.toHaveBeenCalled();
   });
 
@@ -131,22 +131,22 @@ describe("cursor presentation follows actual focus", () => {
     a.host.focus();
     tick();
     expect(document.activeElement).toBe(a.input);
-    expect(inverse(a.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([0]);
     b.input.focus();
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
-    expect(inverse(b.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([]);
+    expect(marked(b.renderer)).toEqual([0]);
     const field = document.createElement("input");
     document.body.appendChild(field);
     field.focus();
     tick();
-    expect(inverse(b.renderer)).toEqual([]);
+    expect(marked(b.renderer)).toEqual([]);
   });
 
   it("initializes focus received before ready and supports a shadow-root host", async () => {
     const early = await mount(document.body, true);
     expect(document.activeElement).toBe(early.input);
-    expect(inverse(early.renderer)).toEqual([0]);
+    expect(marked(early.renderer)).toEqual([0]);
     const outer = document.createElement("div");
     document.body.appendChild(outer);
     const root = outer.attachShadow({ mode: "open" });
@@ -154,36 +154,36 @@ describe("cursor presentation follows actual focus", () => {
     a.host.focus();
     tick();
     expect(root.activeElement).toBe(a.input);
-    expect(inverse(a.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([0]);
     a.terminal.blur();
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
   });
 
   it("hides on window blur or document hiding even while activeElement stays inside", async () => {
     const a = await mount();
     a.terminal.focus();
     tick();
-    expect(inverse(a.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([0]);
     window.dispatchEvent(new Event("blur"));
     tick();
     expect(document.activeElement).toBe(a.input);
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
     window.dispatchEvent(new Event("focus"));
     tick();
-    expect(inverse(a.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([0]);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     document.dispatchEvent(new Event("visibilitychange"));
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     document.dispatchEvent(new Event("visibilitychange"));
     tick();
-    expect(inverse(a.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([0]);
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
     document.dispatchEvent(new Event("visibilitychange"));
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
   });
 
   it("preserves application cursor visibility across blur, refocus and unfocused output", async () => {
@@ -191,45 +191,48 @@ describe("cursor presentation follows actual focus", () => {
     a.terminal.write("\x1b[?25l");
     a.terminal.focus();
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
     a.terminal.blur();
     a.terminal.focus();
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
     a.terminal.blur();
     a.terminal.write("\x1b[?25h");
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
     a.terminal.focus();
     tick();
-    expect(inverse(a.renderer)).toEqual([0]);
+    expect(marked(a.renderer)).toEqual([0]);
     a.terminal.write("\x1b[?25l");
     tick();
-    expect(inverse(a.renderer)).toEqual([]);
+    expect(marked(a.renderer)).toEqual([]);
   });
 
   it("preserves inverse SGR cells and selection while toggling only the cursor overlay", async () => {
     const a = await mount();
     a.terminal.write("\x1b[7mAB\x1b[0mCD\r");
     tick();
-    expect(inverse(a.renderer)).toEqual([0, 1]);
+    expect(marked(a.renderer, 1)).toEqual([0, 1]);
     a.terminal.focus();
     tick();
-    expect(inverse(a.renderer)).toEqual([1]);
+    expect(marked(a.renderer, 1)).toEqual([0, 1]);
+    expect(marked(a.renderer)).toEqual([0]);
     a.terminal.blur();
     tick();
-    expect(inverse(a.renderer)).toEqual([0, 1]);
+    expect(marked(a.renderer, 1)).toEqual([0, 1]);
     const canvas = a.host.querySelector("canvas")!;
     canvas.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 17, clientY: 1 }));
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 31, clientY: 1 }));
     window.dispatchEvent(new MouseEvent("mouseup", { clientX: 31, clientY: 1 }));
     tick();
     expect(a.terminal.getSelection()).toBe("CD");
-    expect(inverse(a.renderer)).toEqual([1, 2, 3]);
+    expect(marked(a.renderer, 1)).toEqual([0, 1, 2, 3]);
+    expect(marked(a.renderer)).toEqual([0]);
     a.terminal.blur();
     tick();
     expect(a.terminal.getSelection()).toBe("CD");
-    expect(inverse(a.renderer)).toEqual([0, 1, 2, 3]);
+    expect(marked(a.renderer, 1)).toEqual([0, 1, 2, 3]);
+    expect(marked(a.renderer)).toEqual([]);
   });
 
   it("removes focus listeners on disposal", async () => {

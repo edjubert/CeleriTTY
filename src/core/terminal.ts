@@ -55,6 +55,7 @@ type AnyListener = (payload: never) => void;
  * Without the wait, the first click of a double click on a URL would open it.
  */
 const LINK_ACTIVATION_DELAY_MS = 500;
+const CURSOR_BLINK_INTERVAL_MS = 500;
 
 export class Terminal {
   readonly #host: HTMLElement;
@@ -73,12 +74,15 @@ export class Terminal {
   #observer: ResizeObserver | undefined;
   #unbindInput: (() => void) | undefined;
   #unbindFocus: (() => void) | undefined;
-  #cursorVisible = false;
+  #cursorFocused = false;
   #unbindRendererDiagnostic: (() => void) | undefined;
   #unbindRendererError: (() => void) | undefined;
   #textInput: NativeTextInput | undefined;
   #frame = 0;
   #dirty = true;
+  #cursorBlinking = false;
+  #cursorVisible = true;
+  #cursorBlinkStarted = 0;
   #replyToQueries = true;
   #syncPending = false;
   #grid: GridSize = { columns: 1, lines: 1 };
@@ -179,6 +183,7 @@ export class Terminal {
     this.#assertLive("start");
     const engine = new EngineTerminal(80, 24);
     engine.setScrollbackLines(this.#options.scrollback);
+    engine.setCursorStyle(this.#options.cursor.style, this.#options.cursor.blink);
     // OSC 10/11/12 queries must be answerable from the first byte the PTY
     // sends: Vibe asks for the background color before it renders anything.
     engine.setNamedColors(
@@ -207,7 +212,7 @@ export class Terminal {
     this.#unbindFocus = this.#bindFocus();
 
     this.#remeasure();
-    this.#frame = requestAnimationFrame(() => this.#draw());
+    this.#frame = requestAnimationFrame((time) => this.#draw(time));
   }
 
   dispose(): void {
@@ -385,6 +390,10 @@ export class Terminal {
     if (patch.scrollback !== undefined) {
       this.#engine?.setScrollbackLines(this.#options.scrollback);
     }
+    if (patch.cursor !== undefined) {
+      this.#engine?.setCursorStyle(this.#options.cursor.style, this.#options.cursor.blink);
+      this.#dirty = true;
+    }
     if (patch.font !== undefined) {
       this.#rebuildAtlas();
     }
@@ -478,8 +487,8 @@ export class Terminal {
       const root = host.getRootNode() as Document | ShadowRoot;
       const visible =
         windowFocused && document.visibilityState !== "hidden" && host.contains(root.activeElement);
-      if (visible === this.#cursorVisible) return;
-      this.#cursorVisible = visible;
+      if (visible === this.#cursorFocused) return;
+      this.#cursorFocused = visible;
       this.#dirty = true;
     };
     const focusIn = (): void => {
@@ -525,7 +534,7 @@ export class Terminal {
     return this.#replyToQueries ? replies : undefined;
   }
 
-  #draw(): void {
+  #draw(time: number): void {
     this.#frame = 0;
     if (this.#disposed) return;
 
@@ -536,15 +545,29 @@ export class Terminal {
       // Only feed can open a batch. Idle terminals never poll across WASM.
       const replies = this.#flushSync(false);
       if (this.#dirty) {
+        this.#cursorBlinking = this.#cursorFocused && engine.cursorBlinking;
+        this.#cursorBlinkStarted = time;
+      }
+      const cursorVisible =
+        this.#cursorFocused &&
+        (!this.#cursorBlinking ||
+          Math.floor((time - this.#cursorBlinkStarted) / CURSOR_BLINK_INTERVAL_MS) % 2 === 0);
+      if (this.#dirty || cursorVisible !== this.#cursorVisible) {
         try {
-          engine.refreshSnapshot(this.#cursorVisible);
+          engine.refreshSnapshot(this.#cursorFocused);
           const packed = new Uint32Array(
             engineMemory(),
             engine.snapshotPtr(),
             engine.snapshotLen(),
           );
           applySelectionHighlight(packed, engine.columns, this.#selectionStart, this.#selectionEnd);
-          renderer.render({ columns: engine.columns, lines: engine.screenLines, packed });
+          renderer.render({
+            columns: engine.columns,
+            lines: engine.screenLines,
+            packed,
+            cursorVisible,
+          });
+          this.#cursorVisible = cursorVisible;
           this.#dirty = false;
         } catch (error) {
           // A failed frame is not device loss. Keep the engine and retry.
@@ -556,7 +579,7 @@ export class Terminal {
       if (!this.#disposed && replies !== undefined && replies.length > 0)
         this.#emit("data", replies);
     } finally {
-      if (!this.#disposed) this.#frame = requestAnimationFrame(() => this.#draw());
+      if (!this.#disposed) this.#frame = requestAnimationFrame((time) => this.#draw(time));
     }
   }
 

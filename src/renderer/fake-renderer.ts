@@ -13,6 +13,7 @@ export interface RecordedFrame {
   lines: number;
   /** A copy, not the caller's buffer — see `render`. */
   packed: Uint32Array;
+  cursorVisible: boolean;
 }
 
 export class FakeRenderer implements Renderer {
@@ -46,6 +47,7 @@ export class FakeRenderer implements Renderer {
       columns: grid.columns,
       lines: grid.lines,
       packed: grid.packed.slice(),
+      cursorVisible: grid.cursorVisible !== false,
     });
   }
 

@@ -7,7 +7,14 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:8123",
     viewport: { width: 1000, height: 700 },
-    launchOptions: { args: ["--enable-unsafe-webgpu"] },
+    launchOptions: {
+      // Headless Chromium's default ANGLE backend on macOS can return valid
+      // WebGPU frames while screenshots show a transparent canvas.
+      args: [
+        "--enable-unsafe-webgpu",
+        ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
+      ],
+    },
     screenshot: "only-on-failure",
   },
   webServer: {

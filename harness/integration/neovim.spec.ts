@@ -130,9 +130,21 @@ test("real Neovim PTY: wheel routing, negotiate sync, insert, edit, save, quit, 
     await page.keyboard.press("Enter");
     await expect.poll(screen).toContain("saved.txt");
     await expect.poll(() => Buffer.concat(output).includes(Buffer.from("\x1b[?2026h"))).toBe(true);
+    // Default n-v uses the same block. Give visual a distinct guicursor shape
+    // so the real TUI stream must carry all three DECSCUSR shapes.
+    await page.keyboard.type(":set guicursor=n-c:block-blinkon0,i:ver25-blinkon0,v:hor20-blinkon0");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.qa.state().cursor?.shape)).toBe("block");
     await page.keyboard.press("i");
+    await expect.poll(() => page.evaluate(() => window.qa.state().cursor?.shape)).toBe("beam");
     await page.keyboard.insertText("CeleriTTY WASM Neovim verified");
     await page.keyboard.press("Escape");
+    await expect.poll(() => page.evaluate(() => window.qa.state().cursor?.shape)).toBe("block");
+    await page.keyboard.press("v");
+    await expect.poll(() => page.evaluate(() => window.qa.state().cursor?.shape)).toBe("underline");
+    await page.screenshot({ path: info.outputPath("neovim-visual-cursor.png") });
+    await page.keyboard.press("Escape");
+    await expect.poll(() => page.evaluate(() => window.qa.state().cursor?.shape)).toBe("block");
     await page.keyboard.type(":w");
     await page.keyboard.press("Enter");
     await expect

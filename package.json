@@ -43,27 +43,35 @@
     "test": "pnpm test:rust && pnpm test:ts",
     "test:rust": "cargo test --workspace",
     "test:ts": "vitest run",
-    "lint": "oxlint src/ harness/",
-    "lint:fix": "oxlint --fix src/ harness/",
-    "format": "oxfmt src/ harness/",
-    "format:check": "oxfmt --check src/ harness/",
+    "lint": "oxlint src/ harness/ debug/",
+    "lint:fix": "oxlint --fix src/ harness/ debug/",
+    "format": "oxfmt src/ harness/ debug/",
+    "format:check": "oxfmt --check src/ harness/ debug/",
     "ts-check": "tsc --noEmit",
     "knip": "knip",
     "harness": "pnpm build:wasm && vite --config vite.harness.config.ts",
+    "debug": "pnpm build:wasm && vite --config vite.debug.config.ts",
+    "test:debug": "pnpm build:wasm && playwright test --config playwright.debug.config.ts",
     "test:browser": "pnpm build && playwright test",
     "test:neovim": "pnpm build && playwright test --config playwright.neovim.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.58.2",
     "@types/node": "^24.13.5",
+    "@types/ws": "^8.18.1",
     "@webgpu/types": "^0.1.71",
     "happy-dom": "^20.11.2",
     "knip": "^6.22.0",
+    "node-pty": "^1.1.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
     "typescript": "^5.7.0",
     "vite": "6.4.3",
-    "vitest": "4.1.9"
+    "vitest": "4.1.9",
+    "ws": "^8.21.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["node-pty"]
   },
   "engines": {
     "node": ">=22.18.0 <25.0.0"

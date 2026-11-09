@@ -1,0 +1,278 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  color: #e5e9f0;
+  background: #10141c;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0 auto;
+  padding: 24px;
+  max-width: 1500px;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+h1 {
+  margin: 4px 0 8px;
+  font-size: 26px;
+  letter-spacing: -0.6px;
+}
+h2 {
+  font-size: 14px;
+  margin: 0 0 16px;
+}
+p {
+  line-height: 1.5;
+  margin: 8px 0;
+}
+.eyebrow {
+  color: #92a8ca;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+.subtitle,
+.muted,
+.hint {
+  color: #a0abc0;
+  font-size: 13px;
+}
+#status {
+  border: 1px solid #3b4a62;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 13px;
+  max-width: 100%;
+}
+#status[data-state="error"] {
+  border-color: #ff8b8b;
+  color: #ffb1b1;
+}
+.card {
+  border: 1px solid #2d3648;
+  border-radius: 10px;
+  background: #181e29;
+}
+.session {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.session label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.session label:first-child {
+  flex: 0 1 360px;
+  min-width: 0;
+}
+.session select {
+  flex: 1;
+  min-width: 0;
+}
+#cwd {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  font-size: 11px;
+}
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: start;
+}
+.terminal-card {
+  overflow: hidden;
+}
+.terminal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  font-size: 13px;
+}
+#terminal {
+  width: 100%;
+  height: 460px;
+  background: #000;
+}
+.readouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 14px 16px;
+  font-size: 12px;
+  color: #a0abc0;
+}
+.readouts strong {
+  color: #d8e6ff;
+  padding-left: 4px;
+  font-family: monospace;
+}
+.controls {
+  padding: 20px;
+}
+.controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+label.checkbox,
+.controls label.checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+button,
+select,
+input {
+  font: inherit;
+}
+button,
+select,
+input:not([type="checkbox"]) {
+  border: 1px solid #414e67;
+  border-radius: 6px;
+  background: #202a3b;
+  color: inherit;
+  padding: 8px 10px;
+}
+button {
+  cursor: pointer;
+  font-size: 12px;
+}
+button:hover:not(:disabled) {
+  background: #34466b;
+  border-color: #8baaf4;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #8baaf4;
+  outline-offset: 3px;
+}
+input[type="checkbox"] {
+  accent-color: #8baaf4;
+}
+input[type="color"] {
+  width: 100%;
+  height: 36px;
+  padding: 4px;
+}
+input[type="file"] {
+  max-width: 100%;
+  font-size: 11px;
+}
+.controls h2:not(:first-child) {
+  margin-top: 24px;
+}
+.preview-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.recipes,
+.diagnostics {
+  margin-top: 16px;
+  padding: 20px;
+}
+.recipes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
+}
+.recipes h2,
+.recipes .hint {
+  grid-column: 1 / -1;
+}
+.recipes p:nth-of-type(1) {
+  grid-column: 1;
+  grid-row: 2;
+}
+.recipes pre:nth-of-type(1) {
+  grid-column: 1;
+  grid-row: 3;
+}
+.recipes p:nth-of-type(2) {
+  grid-column: 2;
+  grid-row: 2;
+}
+.recipes pre:nth-of-type(2) {
+  grid-column: 2;
+  grid-row: 3;
+}
+pre {
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 6px;
+  background: #10141c;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+code {
+  font-family: ui-monospace, monospace;
+  color: #c8d9ff;
+}
+summary {
+  cursor: pointer;
+  font-size: 14px;
+}
+#traffic {
+  margin-left: 16px;
+}
+.diagnostic-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 16px 0 8px;
+  font-size: 13px;
+}
+#log {
+  height: 150px;
+  color: #b9c7dc;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 780px) {
+  body {
+    padding: 12px;
+  }
+  header {
+    align-items: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .workspace,
+  .recipes {
+    grid-template-columns: 1fr;
+  }
+  .recipes p,
+  .recipes pre {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+  }
+  #terminal {
+    height: 360px;
+  }
+  .diagnostic-controls {
+    flex-wrap: wrap;
+  }
+}

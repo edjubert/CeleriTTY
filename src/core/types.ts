@@ -40,14 +40,9 @@ export interface TerminalFont {
 }
 
 export interface TerminalCursor {
-  /**
-   * NOT YET HONORED. The WebGPU renderer draws a single cursor shape.
-   * The field exists because the configuration crate resolves it and the
-   * shared fixtures assert it — dropping it here would desynchronize the two
-   * halves of the contract. See the repository followups.
-   */
+  /** Default shape; applications can override it with DECSCUSR. */
   style: "block" | "beam" | "underline";
-  /** NOT YET HONORED — the renderer does not blink. Same reasoning as `style`. */
+  /** Default blink setting; application cursor sequences take precedence. */
   blink: boolean;
 }
 

@@ -12,8 +12,14 @@ import type { GlyphSource } from "./instance-data";
 export interface RendererGrid {
   columns: number;
   lines: number;
-  /** Packed snapshot: four u32 per cell. Rebuild it after every engine call. */
+  /**
+   * Four u32 per cell: character, foreground, background, flags.
+   * Flags bits 16/17/18 mark a block/beam/underline cursor respectively;
+   * lower bits are alacritty cell attributes. Rebuild after engine calls.
+   */
   packed: Uint32Array;
+  /** Blink phase. Defaults to true; hides only cursor markers, never text. */
+  cursorVisible?: boolean;
 }
 
 export interface AtlasTexture extends GlyphSource {

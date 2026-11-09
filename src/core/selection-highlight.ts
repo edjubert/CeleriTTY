@@ -2,9 +2,8 @@ import { WORDS_PER_CELL } from "../renderer/instance-data";
 import type { CellPoint } from "./types";
 
 /**
- * Bit 0 of the flags word — matches alacritty's `Flags::INVERSE`, the same
- * bit the Rust side already sets for the cursor cell. Reusing it means the
- * selection needs no new shader path and no new palette slot.
+ * Bit 0 of the flags word — matches alacritty's `Flags::INVERSE`.
+ * Cursor markers live in separate upper bits, so highlighting preserves them.
  */
 const FLAG_INVERSE = 1;
 

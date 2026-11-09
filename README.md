@@ -199,7 +199,7 @@ Call `term.focus()` to focus that native surface with `preventScroll`. The host
 remains the only tab stop, and mounting or revealing another terminal never
 moves focus on its own. Do not add a second hidden input around CeleriTTY.
 
-The block cursor is visible only while the terminal has focus in a visible,
+The cursor is visible only while the terminal has focus in a visible,
 focused document. Moving focus between split panes or to another field refreshes
 the cursor on the next animation frame, without waiting for process output.
 Returning focus restores it only if the application allows it (`SHOW_CURSOR`);
@@ -302,6 +302,18 @@ not currently supported.
 | `on(event, cb)` | returns an unsubscribe function |
 | `dispose()` | |
 
+### Cursor
+
+`cursor.style` (`block`, `beam`, `underline`) and `cursor.blink` configure the
+default cursor, including live changes through `setOptions`. Application
+sequences take precedence: DECSCUSR (`CSI Ps SP q`) selects a shape and blink
+setting, DECTCEM hides/shows the cursor, and DECSCUSR 0 restores the configured
+default. The cursor uses `colors.cursor`; blinking alternates every 500 ms.
+
+Neovim's `guicursor` controls which shape it sends for each mode. Its default
+normal and visual modes both use a block; a distinct visual cursor requires a
+corresponding `guicursor` entry.
+
 ## Transport
 
 ```ts
@@ -359,18 +371,24 @@ the file from disk — the one part of this a browser cannot do.
   supported.
 - Wide and combining glyph layout still needs dedicated renderer coverage; the
   atlas clips every rasterized glyph to one cell.
-- `cursor.style` and `cursor.blink` are carried in the options but not drawn.
 - No `bell` or `title` events; the engine does not surface them.
 
 ## Development
+
+For interactive debugging with a real shell, run **`pnpm debug`** and open
+**http://127.0.0.1:8124**. The [contributor debugger](debug/README.md) embeds the
+current source with live cursor/font/theme controls, an ANSI playground, Fish
+and Neovim recipes, and PTY/WebGPU diagnostics.
 
 ```bash
 pnpm install
 pnpm build      # wasm module, bundled ES output, type declarations
 pnpm test       # cargo test --workspace, then vitest
 pnpm harness    # http://localhost:8123
+pnpm debug      # http://127.0.0.1:8124, interactive debugger + real local PTY
 pnpm exec playwright install chromium
 pnpm test:browser # rebuild, then real bundled WASM/WebGPU regressions
+pnpm test:debug # interactive debugger regressions, including a real shell
 ```
 
 Requires Rust 1.85 with the `wasm32-unknown-unknown` target, `wasm-pack`, and
@@ -444,8 +462,9 @@ above still applies.
 ### Neovim PTY regression
 
 The optional integration suite exercises an actual Neovim session through a
-PTY: start, wheel with mouse reporting and alternate-scroll arrows, insert,
-edit, save, quit, and execute a shell command.
+PTY: start, wheel with mouse reporting and alternate-scroll arrows, change
+cursor shapes in normal/insert/visual modes, edit, save, quit, and execute a
+shell command.
 Run `pnpm test:neovim` separately from `pnpm test:browser`.
 It requires Python >=3.8, a POSIX host, and Neovim >=0.11 on `PATH`;
 the spec checks these requirements before starting the fixture.

@@ -10,6 +10,8 @@ const wasm = vi.hoisted(() => ({
   pending: false,
   mouseReporting: 0,
   routingReads: vi.fn(),
+  setCursorStyle: vi.fn(),
+  cursorBlinking: false,
   memory: new ArrayBuffer(80 * 24 * 4 * Uint32Array.BYTES_PER_ELEMENT),
 }));
 
@@ -30,6 +32,10 @@ vi.mock("./wasm", () => ({
 
     setScrollbackLines(): void {}
     setNamedColors(): void {}
+    setCursorStyle = wasm.setCursorStyle;
+    get cursorBlinking(): boolean {
+      return wasm.cursorBlinking;
+    }
     get syncPending(): boolean {
       return wasm.pending;
     }
@@ -101,6 +107,8 @@ describe("Terminal lifecycle", () => {
     wasm.takeOutput.mockReset().mockReturnValue(new Uint8Array());
     wasm.pending = false;
     wasm.mouseReporting = 0;
+    wasm.setCursorStyle.mockClear();
+    wasm.cursorBlinking = false;
     wasm.routingReads.mockClear();
     document.body.replaceChildren();
     frames = new Map();
@@ -150,11 +158,64 @@ describe("Terminal lifecycle", () => {
     vi.restoreAllMocks();
   });
 
-  function runFrame() {
+  function runFrame(time = 0) {
     const [id, frame] = [...frames.entries()][0];
     frames.delete(id);
-    frame(0);
+    frame(time);
   }
+
+  it("applies cursor defaults at startup and when options change", async () => {
+    const terminal = new Terminal(document.createElement("div"), OPTIONS, async () =>
+      createRenderer(),
+    );
+    await terminal.ready;
+    expect(wasm.setCursorStyle).toHaveBeenCalledWith("block", false);
+    terminal.setOptions({ cursor: { style: "underline", blink: true } });
+    expect(wasm.setCursorStyle).toHaveBeenLastCalledWith("underline", true);
+    terminal.dispose();
+  });
+
+  it("redraws blinking cursors at phase changes and resets them on output", async () => {
+    wasm.cursorBlinking = true;
+    const render = vi.fn();
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const terminal = new Terminal(host, OPTIONS, async () => createRenderer(render));
+    await terminal.ready;
+    terminal.focus();
+    runFrame(0);
+    expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ cursorVisible: true }));
+    runFrame(499);
+    expect(render).toHaveBeenCalledTimes(1);
+    runFrame(500);
+    expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ cursorVisible: false }));
+    runFrame(1000);
+    expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ cursorVisible: true }));
+    runFrame(1500);
+    terminal.feed(new Uint8Array());
+    runFrame(1550);
+    expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ cursorVisible: true }));
+    wasm.cursorBlinking = false;
+    terminal.feed(new Uint8Array());
+    runFrame(1600);
+    const count = render.mock.calls.length;
+    runFrame(2500);
+    expect(render).toHaveBeenCalledTimes(count);
+    wasm.cursorBlinking = true;
+    terminal.feed(new Uint8Array());
+    terminal.blur();
+    runFrame(2600);
+    expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ cursorVisible: false }));
+    const unfocusedCount = render.mock.calls.length;
+    runFrame(3100);
+    expect(render).toHaveBeenCalledTimes(unfocusedCount);
+    terminal.focus();
+    runFrame(3200);
+    expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ cursorVisible: true }));
+    terminal.dispose();
+    expect(frames.size).toBe(0);
+  });
 
   it.each([-1, NaN, Infinity, -Infinity, null, "0.5"])(
     "rejects invalid sensitivity %s before touching the host",

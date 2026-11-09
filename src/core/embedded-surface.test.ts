@@ -44,6 +44,7 @@ vi.mock("./wasm", () => ({
     }
     setScrollbackLines(): void {}
     setNamedColors(): void {}
+    setCursorStyle(): void {}
     flushSync(): boolean {
       return false;
     }

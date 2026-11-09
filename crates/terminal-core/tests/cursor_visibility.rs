@@ -1,3 +1,4 @@
+use terminal_core::snapshot::{CURSOR_BLOCK, CURSOR_MASK};
 use terminal_core::terminal::{TerminalCore, TerminalSize};
 
 fn core() -> TerminalCore {
@@ -7,11 +8,11 @@ fn core() -> TerminalCore {
     })
 }
 
-fn inverse(core: &TerminalCore) -> Vec<usize> {
+fn cursors(core: &TerminalCore) -> Vec<usize> {
     core.snapshot()
         .chunks_exact(4)
         .enumerate()
-        .filter_map(|(index, cell)| (cell[3] & 1 != 0).then_some(index))
+        .filter_map(|(index, cell)| (cell[3] & CURSOR_MASK != 0).then_some(index))
         .collect()
 }
 
@@ -19,23 +20,23 @@ fn inverse(core: &TerminalCore) -> Vec<usize> {
 fn local_visibility_never_overrides_or_changes_application_visibility() {
     let mut core = core();
     core.refresh_snapshot_with_cursor(false);
-    assert!(inverse(&core).is_empty());
+    assert!(cursors(&core).is_empty());
     core.refresh_snapshot_with_cursor(true);
-    assert_eq!(inverse(&core), [0]);
+    assert_eq!(cursors(&core), [0]);
 
     core.feed(b"\x1b[?25l");
     for visible in [true, false, true] {
         core.refresh_snapshot_with_cursor(visible);
-        assert!(inverse(&core).is_empty());
+        assert!(cursors(&core).is_empty());
     }
     core.feed(b"\x1b[?25h");
     core.refresh_snapshot_with_cursor(false);
-    assert!(inverse(&core).is_empty());
+    assert!(cursors(&core).is_empty());
     core.refresh_snapshot_with_cursor(true);
-    assert_eq!(inverse(&core), [0]);
+    assert_eq!(cursors(&core), [0]);
     // Existing raw-engine callers keep the default cursor behavior.
     core.refresh_snapshot();
-    assert_eq!(inverse(&core), [0]);
+    assert_eq!(cursors(&core), [0]);
     assert!(core.take_output().is_empty());
 }
 
@@ -45,11 +46,20 @@ fn hiding_the_overlay_preserves_inverse_cells_and_all_other_snapshot_words() {
     core.feed(b"\x1b[7;1;38;2;18;52;86mAB\x1b[0mCD\r");
     core.refresh_snapshot_with_cursor(false);
     let normal = core.snapshot().to_vec();
-    assert_eq!(inverse(&core), [0, 1]);
+    assert!(cursors(&core).is_empty());
+    assert_eq!(normal[3] & 1, 1);
+    assert_eq!(normal[7] & 1, 1);
     core.refresh_snapshot_with_cursor(true);
-    assert_eq!(inverse(&core), [1]);
+    assert_eq!(cursors(&core), [0]);
     for (index, (&actual, &expected)) in core.snapshot().iter().zip(&normal).enumerate() {
-        assert_eq!(actual, if index == 3 { expected ^ 1 } else { expected });
+        assert_eq!(
+            actual,
+            if index == 3 {
+                expected | CURSOR_BLOCK
+            } else {
+                expected
+            }
+        );
     }
     core.refresh_snapshot_with_cursor(false);
     assert_eq!(core.snapshot(), normal);
@@ -63,9 +73,9 @@ fn a_cursor_outside_the_scrollback_view_is_not_drawn_when_focus_returns() {
     core.scroll_lines(3);
     for visible in [false, true, false, true] {
         core.refresh_snapshot_with_cursor(visible);
-        assert!(inverse(&core).is_empty());
+        assert!(cursors(&core).is_empty());
     }
     core.reset_scroll();
     core.refresh_snapshot_with_cursor(true);
-    assert_eq!(inverse(&core), [7]);
+    assert_eq!(cursors(&core), [7]);
 }

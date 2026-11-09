@@ -12,6 +12,10 @@ struct Uniforms {
   grid: vec2<f32>,
   // Cell size in normalized device units.
   cell: vec2<f32>,
+  // Cursor stroke in cell-local units, rounded to physical pixels.
+  cursorStroke: vec2<f32>,
+  cursorVisible: f32,
+  padding: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -24,10 +28,16 @@ struct VertexOutput {
   @location(0) uv: vec2<f32>,
   @location(1) foreground: vec4<f32>,
   @location(2) background: vec4<f32>,
+  @location(3) local: vec2<f32>,
+  @location(4) @interpolate(flat) flags: u32,
 };
 
 // Bit 0 of the cell flags word, matching alacritty's Flags::INVERSE.
 const FLAG_INVERSE: u32 = 1u;
+// Renderer-only flags from the Rust snapshot, above alacritty's u16 flags.
+const CURSOR_BLOCK: u32 = 65536u;
+const CURSOR_BEAM: u32 = 131072u;
+const CURSOR_UNDERLINE: u32 = 262144u;
 
 fn resolveColor(color: vec4<f32>) -> vec4<f32> {
   // w == 1 marks a palette index stored in x; otherwise xyz is literal rgb.
@@ -60,12 +70,13 @@ fn vertexMain(
   var output: VertexOutput;
   output.position = vec4<f32>(clip, 0.0, 1.0);
   output.uv = mix(glyphRect.xy, glyphRect.zw, corner);
+  output.local = corner;
+  output.flags = u32(flags);
 
   var resolvedForeground = resolveColor(foreground);
   var resolvedBackground = resolveColor(background);
 
-  // Inverse swaps the two, which is what makes a block cursor and a selection
-  // free — no cell rewriting on the CPU.
+  // Inverse is a text/selection attribute, independent of the cursor.
   if ((u32(flags) & FLAG_INVERSE) != 0u) {
     let swapped = resolvedForeground;
     resolvedForeground = resolvedBackground;
@@ -81,6 +92,20 @@ fn vertexMain(
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   // The atlas stores coverage only; color comes from the theme.
   let coverage = textureSample(atlasTexture, atlasSampler, input.uv).a;
+  if (uniforms.cursorVisible > 0.5) {
+    let cursorColor = palette[258u];
+    if ((input.flags & CURSOR_BLOCK) != 0u) {
+      // Keep the glyph readable inside the block, including inverse text.
+      let cursorText = select(input.background, input.foreground,
+        (input.flags & FLAG_INVERSE) != 0u);
+      return mix(cursorColor, cursorText, coverage);
+    }
+    if (((input.flags & CURSOR_BEAM) != 0u && input.local.x < uniforms.cursorStroke.x)
+      || ((input.flags & CURSOR_UNDERLINE) != 0u
+        && input.local.y >= 1.0 - uniforms.cursorStroke.y)) {
+      return cursorColor;
+    }
+  }
   return mix(input.background, input.foreground, coverage);
 }
 `;

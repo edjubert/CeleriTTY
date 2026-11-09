@@ -10,6 +10,13 @@ const TAG_RGB: u32 = 2 << 24;
 /// character, foreground, background, flags.
 pub const WORDS_PER_CELL: usize = 4;
 
+/// Renderer-only cursor markers above alacritty's 16-bit cell attributes.
+/// Keep these below bit 24: the GPU instance buffer stores flags as an f32.
+pub const CURSOR_BLOCK: u32 = 1 << 16;
+pub const CURSOR_BEAM: u32 = 1 << 17;
+pub const CURSOR_UNDERLINE: u32 = 1 << 18;
+pub const CURSOR_MASK: u32 = CURSOR_BLOCK | CURSOR_BEAM | CURSOR_UNDERLINE;
+
 /// Pack a cell color into a single `u32` for transfer to JavaScript.
 ///
 /// The high byte is a tag and the low 24 bits are the payload: either a

@@ -11,15 +11,15 @@ test("two real WASM/WebGPU terminals show a cursor only in the focused pane", as
     host.style.width = "333px";
     host.style.height = "201px";
     document.body.appendChild(host);
-    let inverse: number[] = [];
+    let cursors: number[] = [];
     let frames = 0;
     const peer = new qa.Terminal(host, qa.options, async (canvas, atlas) => {
       const renderer = await qa.createWebGpuRenderer(canvas, atlas);
       const render = renderer.render.bind(renderer);
       renderer.render = (grid) => {
-        inverse = [];
+        cursors = [];
         for (let index = 3; index < grid.packed.length; index += 4) {
-          if (grid.packed[index] & 1) inverse.push((index - 3) / 4);
+          if (grid.packed[index] & 0x70000) cursors.push((index - 3) / 4);
         }
         frames++;
         render(grid);
@@ -35,8 +35,8 @@ test("two real WASM/WebGPU terminals show a cursor only in the focused pane", as
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
       return {
-        a: qa.state().inverse,
-        b: [...inverse],
+        a: qa.state().cursor ? [qa.state().cursor!.column] : [],
+        b: [...cursors],
         focused: qa.host.contains(document.activeElement)
           ? "a"
           : host.contains(document.activeElement)
@@ -93,7 +93,7 @@ test("two real WASM/WebGPU terminals show a cursor only in the focused pane", as
   const peerCursor = { a: [], b: [0], focused: "b" };
   expect(states).toEqual({
     initial: none,
-    a: { a: ["0:0"], b: [], focused: "a" },
+    a: { a: [0], b: [], focused: "a" },
     b: peerCursor,
     outside: none,
     domFocus: peerCursor,
@@ -118,10 +118,10 @@ test("real pointer clicks focus the cursor and hide it on leaving the terminal",
     field.id = "outside";
     document.body.appendChild(field);
   });
-  await expect.poll(() => page.evaluate(() => window.qa.state().inverse)).toEqual([]);
+  await expect.poll(() => page.evaluate(() => window.qa.state().cursor)).toBeNull();
   await page.locator("canvas").click();
-  await expect.poll(() => page.evaluate(() => window.qa.state().inverse)).toEqual(["0:0"]);
+  await expect.poll(() => page.evaluate(() => window.qa.state().cursor?.column)).toBe(0);
   await page.locator("#outside").click();
   await expect(page.locator("#outside")).toBeFocused();
-  await expect.poll(() => page.evaluate(() => window.qa.state().inverse)).toEqual([]);
+  await expect.poll(() => page.evaluate(() => window.qa.state().cursor)).toBeNull();
 });

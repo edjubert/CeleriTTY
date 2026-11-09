@@ -19,6 +19,7 @@ vi.mock("./wasm", () => ({
     readonly altScreen = false;
     setScrollbackLines(): void {}
     setNamedColors(): void {}
+    setCursorStyle(): void {}
     flushSync(): boolean {
       return false;
     }
