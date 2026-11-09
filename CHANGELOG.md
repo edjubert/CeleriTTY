@@ -27,6 +27,7 @@
 - Verify shader pixels directly from the GPU canvas backing store, independently
   of headless compositor screenshots. Use full Chromium headless for browser
   tests and its Metal backend on macOS.
+- Update Playwright to 1.65.0 for current Chromium WebGPU regression tests.
 
 ## 1.3.1 — 2026-10-29
 

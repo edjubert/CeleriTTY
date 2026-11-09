@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
-test.afterEach(async ({ page }, testInfo) => {
+test.afterEach(async ({ page, browser }, testInfo) => {
   if (testInfo.status === testInfo.expectedStatus) return;
   const diagnostics = await page.evaluate(async () => {
     const adapter = await navigator.gpu?.requestAdapter();
@@ -19,9 +19,10 @@ test.afterEach(async ({ page }, testInfo) => {
       canvas: { width: canvas.width, height: canvas.height },
     };
   });
+  const report = { browser: browser.version(), ...diagnostics };
   const gpuPath = testInfo.outputPath("gpu-diagnostics.json");
-  await writeFile(gpuPath, JSON.stringify(diagnostics, null, 2));
-  console.log("GPU diagnostics:", JSON.stringify(diagnostics));
+  await writeFile(gpuPath, JSON.stringify(report, null, 2));
+  console.log("GPU diagnostics:", JSON.stringify(report));
   await testInfo.attach("gpu-diagnostics", {
     path: gpuPath,
     contentType: "application/json",

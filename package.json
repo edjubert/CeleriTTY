@@ -56,7 +56,7 @@
     "test:neovim": "pnpm build && playwright test --config playwright.neovim.config.ts"
   },
   "devDependencies": {
-    "@playwright/test": "1.58.2",
+    "@playwright/test": "1.65.0",
     "@types/node": "^24.13.5",
     "@types/ws": "^8.18.1",
     "@webgpu/types": "^0.1.71",
@@ -71,7 +71,9 @@
     "ws": "^8.21.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["node-pty"]
+    "onlyBuiltDependencies": [
+      "node-pty"
+    ]
   },
   "engines": {
     "node": ">=22.18.0 <25.0.0"
