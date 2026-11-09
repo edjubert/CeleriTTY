@@ -1,5 +1,34 @@
 import { expect, test } from "@playwright/test";
 
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  const diagnostics = await page.evaluate(async () => {
+    const adapter = await navigator.gpu?.requestAdapter();
+    const canvas = document.querySelector("canvas")!;
+    return {
+      state: window.qa?.state(),
+      gpu: adapter
+        ? {
+            vendor: adapter.info.vendor,
+            architecture: adapter.info.architecture,
+            device: adapter.info.device,
+            description: adapter.info.description,
+          }
+        : null,
+      canvas: { width: canvas.width, height: canvas.height, png: canvas.toDataURL() },
+    };
+  });
+  const { png, ...size } = diagnostics.canvas;
+  await testInfo.attach("gpu-diagnostics", {
+    body: JSON.stringify({ ...diagnostics, canvas: size }, null, 2),
+    contentType: "application/json",
+  });
+  await testInfo.attach("canvas-readback", {
+    body: Buffer.from(png.split(",")[1], "base64"),
+    contentType: "image/png",
+  });
+});
+
 for (const dpr of [1, 2]) {
   test.describe(`cursor at DPR ${dpr}`, () => {
     test.use({ deviceScaleFactor: dpr });
