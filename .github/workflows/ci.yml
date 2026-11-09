@@ -94,9 +94,10 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends fish neovim mesa-vulkan-drivers vulkan-tools
           # Mesa 25 removed the architecture suffix from its ICD manifest names.
-          vulkan_driver_manifest="$(dpkg -L mesa-vulkan-drivers | rg '/lvp_icd[^/]*\.json$')"
-          test -f "$vulkan_driver_manifest"
-          printf 'VK_DRIVER_FILES=%s\n' "$vulkan_driver_manifest" >> "$GITHUB_ENV"
+          vulkan_driver_manifests=(/usr/share/vulkan/icd.d/lvp_icd*.json)
+          test "${#vulkan_driver_manifests[@]}" -eq 1
+          test -f "${vulkan_driver_manifests[0]}"
+          printf 'VK_DRIVER_FILES=%s\n' "${vulkan_driver_manifests[0]}" >> "$GITHUB_ENV"
       - name: Native Vulkan driver diagnostics
         run: xvfb-run -a vulkaninfo --summary
       - name: Real WASM and WebGPU browser regressions

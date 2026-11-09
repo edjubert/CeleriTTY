@@ -23,10 +23,13 @@
 
 - Add Rust cursor-protocol tests, GPU pixel assertions at two device pixel ratios,
   and debugger regressions covering shell lifecycle, Fish and Neovim when
-  installed. CI runs the debugger suite alongside the browser regressions.
+  installed. CI installs both applications and runs the debugger suite alongside
+  the browser regressions.
 - Verify shader pixels directly from the GPU canvas backing store, independently
   of headless compositor screenshots. Use full Chromium headless for browser
-  tests and its Metal backend on macOS.
+  tests, its Metal backend on macOS, and Mesa Vulkan with a virtual display on
+  Linux CI. A separate native WebGPU probe checks canvas rendering and readback
+  before the terminal regressions.
 - Update Playwright to 1.65.0 for current Chromium WebGPU regression tests.
 
 ## 1.3.1 — 2026-10-29

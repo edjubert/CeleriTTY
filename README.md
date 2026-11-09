@@ -396,13 +396,22 @@ Node 24.21 (Node 22.18 or newer also works).
 
 Browser regressions require a WebGPU-capable Chromium and exercise the built
 `dist/index.js` with the real WASM and renderer, without a backend server.
-The `browser` CI job runs these regressions headlessly on pull requests and
-main-branch pushes, using Chromium's software WebGPU adapter when needed.
+The `browser` CI job runs these regressions on pull requests and main-branch
+pushes, using Mesa's software Vulkan driver and an Xvfb virtual display on Linux.
+The local macOS configuration uses Chromium's Metal backend.
 Cursor pixel assertions read the rendered GPU texture directly, so their
 results do not depend on headless compositor screenshots. A separate test
 checks native WebGPU canvas rendering and readback before exercising the
 terminal. Results, failure screenshots and GPU diagnostics are kept in
 `test-results/`. CI also installs Fish and Neovim for the debugger regressions.
+
+For Linux without a desktop display, install `mesa-vulkan-drivers` and `xvfb`
+alongside Playwright's browser dependencies, then run:
+
+```bash
+xvfb-run -a pnpm test:browser --headed
+xvfb-run -a pnpm test:debug --headed
+```
 
 | Path | Contents |
 |---|---|
