@@ -8,11 +8,20 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:8123",
     viewport: { width: 1000, height: 700 },
     launchOptions: {
-      // Headless Chromium's default ANGLE backend on macOS can return valid
-      // WebGPU frames while screenshots show a transparent canvas.
+      // Match ANGLE's compositor to Dawn's WebGPU backend. Otherwise headless
+      // Chromium can render valid frames while capturing a transparent canvas.
+      // Linux CI uses SwiftShader Vulkan and needs no physical GPU or surface.
       args: [
         "--enable-unsafe-webgpu",
         ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
+        ...(process.platform === "linux"
+          ? [
+              "--use-angle=vulkan",
+              "--use-vulkan=swiftshader",
+              "--enable-features=Vulkan",
+              "--disable-vulkan-surface",
+            ]
+          : []),
       ],
     },
     screenshot: "only-on-failure",
