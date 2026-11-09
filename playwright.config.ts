@@ -1,5 +1,15 @@
 import { defineConfig } from "@playwright/test";
 
+const linuxGpuArgs =
+  process.env.CELERITTY_TEST_ANGLE === "vulkan"
+    ? [
+        "--use-angle=vulkan",
+        "--use-vulkan=swiftshader",
+        "--enable-features=Vulkan",
+        "--disable-vulkan-surface",
+      ]
+    : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"];
+
 export default defineConfig({
   testDir: "harness/browser",
   testMatch: "*.spec.ts",
@@ -14,6 +24,7 @@ export default defineConfig({
       args: [
         "--enable-unsafe-webgpu",
         ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
+        ...(process.platform === "linux" ? linuxGpuArgs : []),
       ],
     },
     screenshot: "only-on-failure",
