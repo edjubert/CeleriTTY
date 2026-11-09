@@ -24,8 +24,9 @@
 - Add Rust cursor-protocol tests, GPU pixel assertions at two device pixel ratios,
   and debugger regressions covering shell lifecycle, Fish and Neovim when
   installed. CI runs the debugger suite alongside the browser regressions.
-- Use full Chromium headless for browser tests and its Metal backend on macOS so
-  screenshots reflect actual WebGPU frames.
+- Verify shader pixels directly from the GPU canvas backing store, independently
+  of headless compositor screenshots. Use full Chromium headless for browser
+  tests and its Metal backend on macOS.
 
 ## 1.3.1 — 2026-10-29
 

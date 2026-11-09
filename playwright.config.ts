@@ -5,14 +5,12 @@ export default defineConfig({
   testMatch: "*.spec.ts",
   workers: 1,
   use: {
-    // Use Chromium's complete headless browser. The separate headless shell
-    // can omit WebGPU canvas contents from screenshots on software adapters.
+    // Exercise the complete Chromium browser used by embedding applications.
     channel: "chromium",
     baseURL: "http://127.0.0.1:8123",
     viewport: { width: 1000, height: 700 },
     launchOptions: {
-      // Match ANGLE's compositor to Dawn's WebGPU backend. Otherwise headless
-      // Chromium can render valid frames while capturing a transparent canvas.
+      // Match ANGLE's compositor to Dawn's Metal backend on macOS.
       args: [
         "--enable-unsafe-webgpu",
         ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
