@@ -92,14 +92,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - name: Install interactive debugger test applications
-        run: sudo apt-get install -y --no-install-recommends fish neovim mesa-vulkan-drivers
+      - name: Install software GPU and debugger test applications
+        run: sudo apt-get install -y --no-install-recommends fish neovim mesa-vulkan-drivers vulkan-tools
+      - name: Native Vulkan driver diagnostics
+        run: xvfb-run -a vulkaninfo --summary
       - name: Real WASM and WebGPU browser regressions
         env:
           DEBUG: pw:browser
-        run: pnpm test:browser --max-failures=1
+        run: xvfb-run -a pnpm test:browser --headed --max-failures=1
       - name: Contributor debugger and local PTY regressions
-        run: pnpm test:debug
+        run: xvfb-run -a pnpm test:debug --headed
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
